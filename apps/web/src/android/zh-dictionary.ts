@@ -521,6 +521,12 @@ export const ZH_EXACT: Record<string, string> = {
 		"这个工程的数据已损坏，打不开。没有删除任何东西，你的其他工程都还在。",
 	"Back to projects": "返回工程列表",
 
+	// ---- 工程列表里的"损坏工程"区（坏记录以前既看不见也删不掉）----
+	"Damaged projects": "损坏的工程记录",
+	"Some projects are damaged and cannot be opened. Deleting them frees storage.":
+		"有些工程记录已损坏、打不开。删除它们可以释放占用的存储。",
+	"Damaged project deleted": "已删除损坏的工程记录",
+
 	// ---- 贴纸：六套内置包的分页名（键必须与 stickers/categories.ts 的值一致）----
 	Twemoji: "推特表情",
 	"Fluent Flat": "扁平表情",

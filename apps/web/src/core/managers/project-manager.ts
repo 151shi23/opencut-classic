@@ -37,9 +37,41 @@ export interface MigrationState {
 	projectName: string | null;
 }
 
+/**
+ * 工程缩略图的编码尺寸。以前直接 `toDataURL("image/png")` 输出整个画布分辨率的
+ * 图（1080p 常见 1–3MB 的 base64 串），而这条串是**工程记录的一部分**：每 800ms
+ * 防抖保存都把它整条重写一遍进 IndexedDB，手机上就是每次落盘都拖一张大图。
+ * 列表里的格子不到 200px，缩到 480 长边 + WebP 后是几十 KB 量级。
+ */
+const THUMBNAIL_MAX_EDGE = 480;
+const THUMBNAIL_QUALITY = 0.82;
+
+function encodeThumbnail(source: HTMLCanvasElement): string {
+	const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(source.width, source.height));
+
+	let input: HTMLCanvasElement = source;
+	if (scale < 1) {
+		const small = document.createElement("canvas");
+		small.width = Math.max(1, Math.round(source.width * scale));
+		small.height = Math.max(1, Math.round(source.height * scale));
+		const context = small.getContext("2d");
+		if (context) {
+			context.imageSmoothingEnabled = true;
+			context.imageSmoothingQuality = "high";
+			context.drawImage(source, 0, 0, small.width, small.height);
+			input = small;
+		}
+	}
+
+	const webp = input.toDataURL("image/webp", THUMBNAIL_QUALITY);
+	// 不支持 WebP 编码时 toDataURL 静默回 PNG，尺寸仍远小于原画布
+	return webp.startsWith("data:image/webp") ? webp : input.toDataURL("image/png");
+}
+
 export class ProjectManager {
 	private active: TProject | null = null;
 	private savedProjects: TProjectMetadata[] = [];
+	private damagedProjectIds: string[] = [];
 	private isLoading = true;
 	private isInitialized = false;
 	private invalidProjectIds = new Set<string>();
@@ -260,8 +292,10 @@ export class ProjectManager {
 		try {
 			await this.ensureStorageMigrations();
 			try {
-				const metadata = await storageService.loadAllProjectsMetadata();
-				this.savedProjects = metadata;
+				const { projects, damagedIds } =
+					await storageService.loadAllProjectsMetadata();
+				this.savedProjects = projects;
+				this.damagedProjectIds = damagedIds;
 				this.notify();
 			} catch (error) {
 				console.error("Failed to load projects:", error);
@@ -295,6 +329,9 @@ export class ProjectManager {
 			const idSet = new Set(uniqueIds);
 			this.savedProjects = this.savedProjects.filter(
 				(project) => !idSet.has(project.id),
+			);
+			this.damagedProjectIds = this.damagedProjectIds.filter(
+				(id) => !idSet.has(id),
 			);
 
 			const shouldClearActive =
@@ -633,6 +670,11 @@ export class ProjectManager {
 		return this.savedProjects;
 	}
 
+	/** 读不出结构的记录：不能假装是工程，只能给用户一条删除出路 */
+	getDamagedProjectIds(): string[] {
+		return this.damagedProjectIds;
+	}
+
 	getIsLoading(): boolean {
 		return this.isLoading;
 	}
@@ -687,7 +729,13 @@ export class ProjectManager {
 			targetCanvas: tempCanvas,
 		});
 
-		const thumbnailDataUrl = tempCanvas.toDataURL("image/png");
+		const thumbnailDataUrl = encodeThumbnail(tempCanvas);
+
+		// 退出工程时也会走到这里，画面没动过就别再落一遍：以前每次退出都要重写
+		// 一整张原始画布尺寸的 PNG dataURL，并顺带触发一次全量保存
+		if (thumbnailDataUrl === this.active.metadata.thumbnail) {
+			return false;
+		}
 
 		await this.updateThumbnail({ thumbnail: thumbnailDataUrl });
 		return true;

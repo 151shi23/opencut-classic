@@ -132,6 +132,7 @@ export default function ProjectsPage() {
 						))}
 					</div>
 				)}
+				<DamagedProjectsSection />
 			</main>
 		</div>
 	);
@@ -388,6 +389,62 @@ async function renameProject({
 	name: string;
 }) {
 	await editor.project.renameProject({ id, name });
+}
+
+/*
+ * 损坏记录专用的一条出路。工程列表是按 metadata 渲染的，坏记录读不出名字，
+ * 以前直接被跳过 —— 用户既看不见它，也删不掉它，它还一直占着存储和媒体库。
+ * 这里不给它伪装成工程（不能改名、不能复制、不能打开），只给删除。
+ */
+function DamagedProjectsSection() {
+	const editor = useEditor();
+	const damagedIds = useEditor((e) => e.project.getDamagedProjectIds());
+	const [pendingId, setPendingId] = useState<string | null>(null);
+
+	if (damagedIds.length === 0) return null;
+
+	const handleConfirm = async () => {
+		const id = pendingId;
+		setPendingId(null);
+		if (!id) return;
+		await editor.project.deleteProjects({ ids: [id] });
+		toast.success("Damaged project deleted");
+	};
+
+	return (
+		<section className="border-destructive/30 mx-1 flex flex-col gap-2 rounded-lg border p-3 sm:mx-4">
+			<p className="text-sm font-medium">Damaged projects</p>
+			<p className="text-muted-foreground text-xs">
+				Some projects are damaged and cannot be opened. Deleting them frees
+				storage.
+			</p>
+			<ul className="flex flex-col gap-1">
+				{damagedIds.map((id) => (
+					<li key={id} className="flex items-center justify-between gap-2">
+						<span className="text-muted-foreground min-w-0 truncate font-mono text-xs">
+							{id.slice(0, 8)}
+						</span>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setPendingId(id)}
+						>
+							Delete
+						</Button>
+					</li>
+				))}
+			</ul>
+
+			<DeleteProjectDialog
+				isOpen={pendingId !== null}
+				onOpenChange={(open) => {
+					if (!open) setPendingId(null);
+				}}
+				projectNames={[pendingId?.slice(0, 8) ?? ""]}
+				onConfirm={handleConfirm}
+			/>
+		</section>
+	);
 }
 
 function ProjectActions() {

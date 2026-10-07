@@ -260,11 +260,15 @@ class StorageService {
 		);
 	}
 
-	async loadAllProjectsMetadata(): Promise<TProjectMetadata[]> {
+	async loadAllProjectsMetadata(): Promise<{
+		projects: TProjectMetadata[];
+		damagedIds: string[];
+	}> {
 		await this.ensureMigrations();
 		const serializedProjects = await this.projectsAdapter.getAll();
 
 		const metadata: TProjectMetadata[] = [];
+		const damagedIds: string[] = [];
 		for (const serializedProject of serializedProjects) {
 			if (
 				typeof serializedProject !== "object" ||
@@ -276,6 +280,12 @@ class StorageService {
 					"[storage] Skipping malformed project entry (missing metadata):",
 					serializedProject,
 				);
+				// 跳过不等于没事：这条记录还躺在库里占空间，而用户在列表里看不见它
+				// 就永远删不掉。store 的 keyPath 就是 id，所以坏记录一定带 id
+				const id = (serializedProject as { id?: unknown }).id;
+				if (typeof id === "string") {
+					damagedIds.push(id);
+				}
 				continue;
 			}
 
@@ -295,9 +305,12 @@ class StorageService {
 			});
 		}
 
-		return metadata.sort(
-			(a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
-		);
+		return {
+			projects: metadata.sort(
+				(a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+			),
+			damagedIds,
+		};
 	}
 
 	async deleteProject({ id }: { id: string }): Promise<void> {
