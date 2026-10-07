@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback, type CSSProperties } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type CSSProperties,
+} from "react";
 import { List, type RowComponentProps } from "react-window";
 import {
 	Popover,
@@ -13,15 +20,23 @@ import { loadFullFont } from "@/fonts/google-fonts";
 import { SYSTEM_FONTS } from "@/fonts/system-fonts";
 import type { FontAtlas, FontAtlasEntry } from "@/fonts/types";
 import { useFontAtlas } from "@/fonts/use-font-atlas";
+import {
+	CustomFontError,
+	deleteCustomFont,
+	importCustomFont,
+	isCustomFontFamily,
+	SUPPORTED_FONT_SUFFIXES,
+} from "@/fonts/custom-fonts";
+import { useCustomFonts } from "@/fonts/use-custom-fonts";
 import { cn } from "@/utils/ui";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown, Loader2, Search } from "lucide-react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { TextIcon } from "@hugeicons/core-free-icons";
+import { Delete02Icon, TextIcon } from "@hugeicons/core-free-icons";
+import { toast } from "sonner";
 
 const FONT_TABS = [
 	{ key: "all", label: "All fonts" },
 	{ key: "my-fonts", label: "My fonts" },
-	{ key: "favorites", label: "Favorites" },
 ] as const;
 
 type FontTab = (typeof FONT_TABS)[number]["key"];
@@ -46,14 +61,35 @@ export function FontPicker({
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState("");
 	const [activeTab, setActiveTab] = useState<FontTab>("all");
+	const [isImporting, setIsImporting] = useState(false);
 	const searchInputRef = useRef<HTMLInputElement>(null);
-	const { atlas, status, fontNames, retry: handleRetry } = useFontAtlas({ open });
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const { atlas, status, fontNames, retry: handleRetry } = useFontAtlas({
+		open,
+	});
+	const { fonts: customFonts, refresh: refreshCustomFonts } = useCustomFonts({
+		open,
+	});
+
+	const customFamilies = useMemo(
+		() => new Set(customFonts.map((font) => font.family)),
+		[customFonts],
+	);
+
+	// 页签以前只是高亮，点「我的字体」和「收藏」拿到的都是全量列表
+	const tabFonts = useMemo(() => {
+		if (activeTab === "my-fonts") return [...customFamilies];
+		return [
+			...fontNames,
+			...[...customFamilies].filter((family) => !fontNames.includes(family)),
+		];
+	}, [activeTab, fontNames, customFamilies]);
 
 	const filteredFonts = useMemo(() => {
-		if (!search) return fontNames;
+		if (!search) return tabFonts;
 		const query = search.toLowerCase();
-		return fontNames.filter((name) => name.toLowerCase().includes(query));
-	}, [fontNames, search]);
+		return tabFonts.filter((name) => name.toLowerCase().includes(query));
+	}, [tabFonts, search]);
 
 	const listHeight = Math.min(
 		MAX_LIST_HEIGHT,
@@ -62,7 +98,8 @@ export function FontPicker({
 
 	const handleSelect = useCallback(
 		async ({ family }: { family: string }) => {
-			if (!SYSTEM_FONTS.has(family)) {
+			// 本地字体已经在 document.fonts 里了，去问 Google 只会拿到一条废请求
+			if (!SYSTEM_FONTS.has(family) && !isCustomFontFamily({ family })) {
 				try {
 					await loadFullFont({ family });
 				} catch {
@@ -73,6 +110,44 @@ export function FontPicker({
 			setOpen(false);
 		},
 		[onValueChange],
+	);
+
+	const handleImportFiles = useCallback(
+		async (files: FileList | null) => {
+			if (!files || files.length === 0) return;
+			setIsImporting(true);
+
+			let imported = 0;
+			for (const file of Array.from(files)) {
+				try {
+					await importCustomFont({ file });
+					imported += 1;
+				} catch (error) {
+					toast.error(
+						file.name,
+						error instanceof CustomFontError
+							? { description: error.message }
+							: { description: "This font file could not be loaded" },
+					);
+				}
+			}
+
+			if (imported > 0) {
+				toast.success("Fonts imported");
+				await refreshCustomFonts();
+			}
+			setIsImporting(false);
+		},
+		[refreshCustomFonts],
+	);
+
+	const handleDeleteFont = useCallback(
+		async ({ id }: { id: string }) => {
+			await deleteCustomFont({ id });
+			await refreshCustomFonts();
+			toast.success("Font deleted");
+		},
+		[refreshCustomFonts],
 	);
 
 	useEffect(() => {
@@ -104,7 +179,8 @@ export function FontPicker({
 				<ChevronDown className="size-3 shrink-0 opacity-50" />
 			</PopoverTrigger>
 			<PopoverContent
-				className="w-72 p-0 overflow-hidden"
+				// 属性面板在手机横屏下只有一百多 px，弹层按视口收窄，别溢出到屏幕外
+				className="w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden p-0"
 				align="start"
 				side="left"
 				onOpenAutoFocus={(event) => {
@@ -117,14 +193,14 @@ export function FontPicker({
 				}}
 			>
 				<div className="relative px-3 py-1.5">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 shrink-0 opacity-50" />
+					<Search className="absolute top-1/2 left-3 size-3.5 shrink-0 -translate-y-1/2 opacity-50" />
 					<Input
 						ref={searchInputRef}
 						placeholder={`Search ${activeTabLabel}...`}
 						value={search}
 						onChange={(event) => setSearch(event.target.value)}
 						size="xs"
-						className="w-full pl-5 bg-transparent border-none! shadow-none!"
+						className="w-full border-none! bg-transparent pl-5 shadow-none!"
 					/>
 				</div>
 				<div className="flex border-b px-3">
@@ -133,7 +209,7 @@ export function FontPicker({
 							key={tab.key}
 							type="button"
 							className={cn(
-								"px-3 py-1.5 text-xs border-b-2 -mb-px",
+								"-mb-px border-b-2 px-3 py-1.5 text-xs",
 								activeTab === tab.key
 									? "border-foreground text-foreground"
 									: "border-transparent text-muted-foreground hover:text-foreground",
@@ -150,8 +226,8 @@ export function FontPicker({
 					</div>
 				)}
 				{status === "error" && (
-					<div className="flex flex-col items-center gap-3 py-8 px-4">
-						<p className="text-sm text-muted-foreground text-center">
+					<div className="flex flex-col items-center gap-3 px-4 py-8">
+						<p className="text-center text-sm text-muted-foreground">
 							Failed to load font previews.
 						</p>
 						<Button variant="outline" size="sm" onClick={handleRetry}>
@@ -163,7 +239,9 @@ export function FontPicker({
 					fontNames.length > 0 &&
 					filteredFonts.length === 0 && (
 						<div className="py-6 text-center text-sm text-muted-foreground">
-							No fonts found.
+							{activeTab === "my-fonts"
+								? "No fonts imported yet."
+								: "No fonts found."}
 						</div>
 					)}
 				{status === "idle" && atlas && filteredFonts.length > 0 && (
@@ -176,15 +254,47 @@ export function FontPicker({
 							atlas,
 							filteredFonts,
 							selectedFont: defaultValue,
+							customFonts,
+							customFamilies,
 							onFontSelect: handleSelect,
+							onFontDelete: handleDeleteFont,
 						}}
 						style={{ height: listHeight, width: LIST_WIDTH }}
 					/>
 				)}
+				<div className="border-border flex items-center justify-between gap-2 border-t px-3 py-2">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={isImporting}
+						onClick={() => fileInputRef.current?.click()}
+					>
+						{isImporting ? (
+							<Loader2 className="size-3.5 animate-spin" />
+						) : null}
+						Import font
+					</Button>
+					<span className="text-muted-foreground max-w-[104px] text-right text-[10px] leading-tight">
+						{TYPED_ACCEPT_LABEL}
+					</span>
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						accept={SUPPORTED_FONT_SUFFIXES.join(",")}
+						className="hidden"
+						onChange={(event) => {
+							void handleImportFiles(event.target.files);
+							event.target.value = "";
+						}}
+					/>
+				</div>
 			</PopoverContent>
 		</Popover>
 	);
 }
+
+const TYPED_ACCEPT_LABEL = "TTF · OTF · WOFF · WOFF2";
 
 function FontSpritePreview({ entry }: { entry: FontAtlasEntry }) {
 	return (
@@ -211,7 +321,10 @@ type FontRowProps = {
 	atlas: FontAtlas;
 	filteredFonts: string[];
 	selectedFont: string | undefined;
+	customFonts: { id: string; family: string }[];
+	customFamilies: Set<string>;
 	onFontSelect: (params: { family: string }) => void;
+	onFontDelete: (params: { id: string }) => void;
 };
 
 function FontRow({
@@ -220,39 +333,71 @@ function FontRow({
 	atlas,
 	filteredFonts,
 	selectedFont,
+	customFonts,
+	customFamilies,
 	onFontSelect,
+	onFontDelete,
 }: RowComponentProps<FontRowProps>) {
 	const fontName = filteredFonts[index];
 	const entry = atlas.fonts[fontName];
 	const isSelected = fontName === selectedFont;
+	const isCustom = customFamilies.has(fontName);
 	const isSystemFont = SYSTEM_FONTS.has(fontName);
+	const customRecord = isCustom
+		? customFonts.find((font) => font.family === fontName)
+		: undefined;
 
 	return (
-		<button
-			type="button"
+		<div
 			style={style as CSSProperties}
 			className={cn(
-				"flex w-full cursor-pointer items-center gap-2 px-3 outline-hidden hover:bg-popover-hover",
+				"flex w-full items-center gap-1 px-3",
 				isSelected && "bg-popover-hover",
 			)}
-			onClick={() => onFontSelect({ family: fontName })}
-			onKeyDown={(event) => {
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					onFontSelect({ family: fontName });
-				}
-			}}
-			aria-label={fontName}
 		>
-			<div className="min-w-0 overflow-hidden">
-				{isSystemFont ? (
-					<span className="text-xl text-foreground/85" style={{ fontFamily: fontName }}>
-						{fontName}
-					</span>
-				) : (
-					<FontSpritePreview entry={entry} />
-				)}
-			</div>
-		</button>
+			<button
+				type="button"
+				className="flex min-w-0 flex-1 cursor-pointer items-center outline-hidden hover:bg-popover-hover"
+				onClick={() => onFontSelect({ family: fontName })}
+				onKeyDown={(event) => {
+					if (event.key === "Enter" || event.key === " ") {
+						event.preventDefault();
+						onFontSelect({ family: fontName });
+					}
+				}}
+				aria-label={fontName}
+			>
+				<div className="min-w-0 overflow-hidden">
+					{/* 本地字体没有预烘的 sprite（那是给 Google 字体批量生成的），
+						直接用这个字体自己写出名字，反而更能看出效果 */}
+					{isSystemFont || isCustom ? (
+						<span
+							className="text-foreground/85 text-xl"
+							style={{ fontFamily: fontName }}
+						>
+							{fontName}
+						</span>
+					) : (
+						<FontSpritePreview entry={entry} />
+					)}
+				</div>
+			</button>
+			{/* 手机上没有 hover，删除按钮必须常驻；放在两个页签里都能找到，
+				因为「全部字体」里一样会列出本地字体 */}
+			{customRecord ? (
+				<Button
+					variant="ghost"
+					size="icon"
+					aria-label={`Delete ${fontName}`}
+					className="text-muted-foreground size-7 shrink-0"
+					onClick={(event) => {
+						event.stopPropagation();
+						onFontDelete({ id: customRecord.id });
+					}}
+				>
+					<HugeiconsIcon icon={Delete02Icon} />
+				</Button>
+			) : null}
+		</div>
 	);
 }

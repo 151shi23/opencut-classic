@@ -1,5 +1,6 @@
 import type { FontAtlas } from "@/fonts/types";
 import { SYSTEM_FONTS } from "@/fonts/system-fonts";
+import { isCustomFontFamily } from "@/fonts/custom-fonts";
 
 const GOOGLE_FONTS_CSS = "https://fonts.googleapis.com/css2";
 const FONT_ATLAS_PATH = "/fonts/font-atlas.json";
@@ -83,6 +84,11 @@ export async function loadFonts({
 }: {
 	families: string[];
 }): Promise<void> {
-	const googleFonts = families.filter((family) => !SYSTEM_FONTS.has(family));
+	// 本地导入的字体不在这份名单里问 Google：那个 family 名是文件名，
+	// Google 上根本没有，请求过去只会拿到一条废响应
+	const googleFonts = families.filter(
+		(family) =>
+			!SYSTEM_FONTS.has(family) && !isCustomFontFamily({ family }),
+	);
 	await Promise.all(googleFonts.map((family) => loadFullFont({ family })));
 }

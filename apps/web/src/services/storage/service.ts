@@ -7,6 +7,7 @@ import {
 	listDatabaseNames,
 } from "./indexeddb-adapter";
 import { MalformedProjectError, isMalformedProjectError } from "./errors";
+import { clearCustomFonts } from "@/fonts/custom-fonts";
 import { OPFSAdapter } from "./opfs-adapter";
 import {
 	type StorageCapacityCheckResult,
@@ -518,6 +519,12 @@ class StorageService {
 				),
 			);
 		}
+
+		// 用户导入的字体是 App 级存储，不属于任何工程，但「清除全部数据」
+		// 也得把它一起清掉 —— 否则字体库和 custom-fonts 目录会变成永远扫不到的孤儿
+		await clearCustomFonts().catch((error) =>
+			console.error("Failed to drop imported fonts:", error),
+		);
 	}
 
 	async getStorageInfo(): Promise<{

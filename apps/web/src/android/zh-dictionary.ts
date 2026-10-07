@@ -420,6 +420,25 @@ export const ZH_EXACT: Record<string, string> = {
 	"My fonts": "我的字体",
 	"All fonts": "全部字体",
 	"No fonts found.": "没有找到字体。",
+
+	// ---- 本地字体导入（导入 TTF/OTF，注册进 document.fonts）----
+	"Import font": "导入字体",
+	"Select a font": "选择字体",
+	// 占位符是 `Search ${页签名}...` 拼出来的，拼完是两条固定串，就按整句收
+	"Search all fonts...": "搜索全部字体…",
+	"Search my fonts...": "搜索我的字体…",
+	"No fonts imported yet.": "还没有导入过字体。",
+	"Fonts imported": "字体已导入",
+	"Font deleted": "字体已删除",
+	"Unsupported font file type": "不支持的字体文件类型",
+	"This is a font collection (.ttc). Import one .ttf or .otf file instead":
+		"这是字体集（.ttc），请改成导入单个 .ttf 或 .otf 文件",
+	"This font file is empty": "字体文件是空的",
+	"This font file is too large": "字体文件太大",
+	"Could not read a font name from this file": "没法从文件名认出字体名",
+	"This font is already imported": "这个字体已经导入过了",
+	"This font file could not be loaded": "字体文件读不出来，可能已损坏",
+	"Font file is missing from storage": "字体文件在存储里不见了",
 	"Loading fonts...": "正在加载字体…",
 	"Loading sounds...": "正在加载音效…",
 	"Loading more sounds...": "正在加载更多音效…",
