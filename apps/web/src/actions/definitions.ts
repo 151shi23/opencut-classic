@@ -194,6 +194,21 @@ export function getActionDefinition({
 	};
 }
 
+/**
+ * 安卓移植补丁：classic 快照里 persistence.ts 引用了这个守卫但上游没导出，补上。
+ * 运行时语义：字符串、是已知 action、且不是必须带参数的那几个。
+ */
+export function isActionWithOptionalArgs(
+	value: unknown,
+): value is TActionWithOptionalArgs {
+	if (typeof value !== "string" || !(value in ACTIONS)) {
+		return false;
+	}
+	const requiresArgs =
+		value === "remove-media-asset" || value === "remove-media-assets";
+	return !requiresArgs;
+}
+
 export function getDefaultShortcuts(): Map<
 	ShortcutKey,
 	TActionWithOptionalArgs

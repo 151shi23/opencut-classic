@@ -27,6 +27,7 @@ import { ClipEffectsTab, StandaloneEffectTab } from "@/effects/components/effect
 import { MasksTab } from "@/masks/components/masks-tab";
 import { SpeedTab } from "@/speed/components/speed-tab";
 import { GraphicTab } from "@/graphics/components/graphic-tab";
+import { AnimationPresetsSection } from "@/animation/components/animation-presets-section";
 import { OcShapesIcon } from "@/components/icons";
 
 const TRANSFORM_PARAM_KEYS = [
@@ -57,6 +58,15 @@ const TEXT_PARAM_KEYS = [
 	"background.paddingY",
 	"background.offsetX",
 	"background.offsetY",
+	// 安卓移植新增：描边 / 阴影
+	"stroke.enabled",
+	"stroke.color",
+	"stroke.width",
+	"shadow.enabled",
+	"shadow.color",
+	"shadow.blur",
+	"shadow.offsetX",
+	"shadow.offsetY",
 ] as const;
 
 export type TabContentProps = {
@@ -192,6 +202,18 @@ function buildTextTab({ element }: { element: TextElement }): PropertiesTabDef {
 	};
 }
 
+// 安卓移植新增：动画 tab（入场 / 出场 / 音频淡入淡出预设）
+function buildAnimationTab({ element }: { element: TimelineElement }): PropertiesTabDef {
+	return {
+		id: "animation",
+		label: "动画",
+		icon: <HugeiconsIcon icon={DashboardSpeed02Icon} size={16} />,
+		content: ({ trackId }) => (
+			<AnimationPresetsSection element={element} trackId={trackId} />
+		),
+	};
+}
+
 function buildGraphicTab({
 	element,
 }: {
@@ -231,6 +253,8 @@ function getTextConfig({
 			buildTextTab({ element }),
 			buildTransformTab({ element }),
 			buildBlendingTab({ element }),
+			buildClipEffectsTab({ element }),
+			buildAnimationTab({ element }),
 		],
 	};
 }
@@ -252,6 +276,7 @@ function getVideoConfig({
 			buildBlendingTab({ element }),
 			buildMasksTab({ element }),
 			buildClipEffectsTab({ element }),
+			buildAnimationTab({ element }),
 		],
 	};
 }
@@ -268,6 +293,7 @@ function getImageConfig({
 			buildBlendingTab({ element }),
 			buildMasksTab({ element }),
 			buildClipEffectsTab({ element }),
+			buildAnimationTab({ element }),
 		],
 	};
 }
@@ -283,6 +309,7 @@ function getStickerConfig({
 			buildTransformTab({ element }),
 			buildBlendingTab({ element }),
 			buildClipEffectsTab({ element }),
+			buildAnimationTab({ element }),
 		],
 	};
 }
@@ -300,6 +327,7 @@ function getGraphicConfig({
 			buildBlendingTab({ element }),
 			buildMasksTab({ element }),
 			buildClipEffectsTab({ element }),
+			buildAnimationTab({ element }),
 		],
 	};
 }
@@ -311,7 +339,11 @@ function getAudioConfig({
 }): ElementPropertiesConfig {
 	return {
 		defaultTab: "audio",
-		tabs: [buildAudioTab({ element }), buildSpeedTab({ element })],
+		tabs: [
+			buildAudioTab({ element }),
+			buildSpeedTab({ element }),
+			buildAnimationTab({ element }),
+		],
 	};
 }
 

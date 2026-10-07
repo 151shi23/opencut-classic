@@ -1,4 +1,7 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+	MouseEvent as ReactMouseEvent,
+	TouchEvent as ReactTouchEvent,
+} from "react";
 import type { FrameRate } from "opencut-wasm";
 import {
 	mediaTime,
@@ -35,6 +38,12 @@ interface ScrubSession {
 }
 
 type Session = { kind: "idle" } | ScrubSession;
+
+/**
+ * mouse 与 touch 都只贡献一个横向坐标，统一成这一种入参，触屏才能直接复用
+ * 桌面那套 scrub 逻辑（手指拖动时 Chrome 不再补发 mousemove，只能自己接 touch）。
+ */
+type PointerClientX = { clientX: number };
 
 // --- Config ---
 
@@ -106,6 +115,8 @@ export class PlayheadController {
 		this.onRulerMouseDown = this.onRulerMouseDown.bind(this);
 		this.handleMouseMove = this.handleMouseMove.bind(this);
 		this.handleMouseUp = this.handleMouseUp.bind(this);
+		this.handleTouchMove = this.handleTouchMove.bind(this);
+		this.handleTouchEnd = this.handleTouchEnd.bind(this);
 	}
 
 	private get config(): PlayheadConfig {
@@ -129,15 +140,11 @@ export class PlayheadController {
 	onPlayheadMouseDown(event: ReactMouseEvent): void {
 		event.preventDefault();
 		event.stopPropagation();
-		this.session = {
-			kind: "scrubbing",
+		this.beginScrub({
+			clientX: event.clientX,
 			didStartFromRuler: false,
-			hasMoved: false,
-			currentTime: null,
-		};
-		this.config.setScrubbing(true);
-		this.scrub({ event, isElementSnappingEnabled: true });
-		this.activate();
+			isElementSnappingEnabled: true,
+		});
 	}
 
 	onRulerMouseDown(event: ReactMouseEvent): void {
@@ -145,16 +152,40 @@ export class PlayheadController {
 		if (this.config.getPlayheadEl()?.contains(event.target as Node)) return;
 
 		event.preventDefault();
-		this.session = {
-			kind: "scrubbing",
+		this.beginScrub({
+			clientX: event.clientX,
 			didStartFromRuler: true,
-			hasMoved: false,
-			currentTime: null,
-		};
-		this.config.setScrubbing(true);
-		// No element-edge snapping on initial ruler click — avoids a jarring jump.
-		this.scrub({ event, isElementSnappingEnabled: false });
-		this.activate();
+			// No element-edge snapping on initial ruler click — avoids a jarring jump.
+			isElementSnappingEnabled: false,
+		});
+	}
+
+	/**
+	 * 触屏上 Chrome 只在抬指那一刻才补发 mousedown，靠 mouse 起手永远跟不上手指，
+	 * 所以 touchstart 直接开会话，后续由 touchmove 连续喂坐标。
+	 */
+	onPlayheadTouchStart(event: ReactTouchEvent): void {
+		const touch = event.touches[0];
+		if (!touch) return;
+		event.preventDefault();
+		event.stopPropagation();
+		this.beginScrub({
+			clientX: touch.clientX,
+			didStartFromRuler: false,
+			isElementSnappingEnabled: true,
+		});
+	}
+
+	onRulerTouchStart(event: ReactTouchEvent): void {
+		const touch = event.touches[0];
+		if (!touch) return;
+		if (this.config.getPlayheadEl()?.contains(event.target as Node)) return;
+		event.preventDefault();
+		this.beginScrub({
+			clientX: touch.clientX,
+			didStartFromRuler: true,
+			isElementSnappingEnabled: false,
+		});
 	}
 
 	// --- Public non-session methods ---
@@ -214,14 +245,43 @@ export class PlayheadController {
 
 	// --- Private ---
 
+	private beginScrub({
+		clientX,
+		didStartFromRuler,
+		isElementSnappingEnabled,
+	}: {
+		clientX: number;
+		didStartFromRuler: boolean;
+		isElementSnappingEnabled: boolean;
+	}): void {
+		this.session = {
+			kind: "scrubbing",
+			didStartFromRuler,
+			hasMoved: false,
+			currentTime: null,
+		};
+		this.config.setScrubbing(true);
+		this.scrub({ event: { clientX }, isElementSnappingEnabled });
+		this.activate();
+	}
+
 	private activate(): void {
 		window.addEventListener("mousemove", this.handleMouseMove);
 		window.addEventListener("mouseup", this.handleMouseUp);
+		// 手指拖动不会有 mousemove/mouseup，直接挂 touch 才跟得上手。
+		window.addEventListener("touchmove", this.handleTouchMove, {
+			passive: false,
+		});
+		window.addEventListener("touchend", this.handleTouchEnd);
+		window.addEventListener("touchcancel", this.handleTouchEnd);
 	}
 
 	private deactivate(): void {
 		window.removeEventListener("mousemove", this.handleMouseMove);
 		window.removeEventListener("mouseup", this.handleMouseUp);
+		window.removeEventListener("touchmove", this.handleTouchMove);
+		window.removeEventListener("touchend", this.handleTouchEnd);
+		window.removeEventListener("touchcancel", this.handleTouchEnd);
 	}
 
 	/**
@@ -233,7 +293,7 @@ export class PlayheadController {
 		event,
 		isElementSnappingEnabled,
 	}: {
-		event: MouseEvent | ReactMouseEvent;
+		event: PointerClientX;
 		isElementSnappingEnabled: boolean;
 	}): void {
 		const ruler = this.config.getRulerEl();
@@ -284,7 +344,7 @@ export class PlayheadController {
 		this.lastMouseClientX = event.clientX;
 	}
 
-	private handleMouseMove(event: MouseEvent): void {
+	private handleMouseMove(event: PointerClientX): void {
 		if (this.session.kind !== "scrubbing") return;
 		this.scrub({ event, isElementSnappingEnabled: true });
 		if (this.session.didStartFromRuler) {
@@ -292,7 +352,16 @@ export class PlayheadController {
 		}
 	}
 
-	private handleMouseUp(event: MouseEvent): void {
+	private handleTouchMove(event: TouchEvent): void {
+		if (this.session.kind !== "scrubbing") return;
+		const touch = event.touches[0];
+		if (!touch) return;
+		// 手势不拦下来就会被判成滚动，落点会一直停在按下那一刻。
+		event.preventDefault();
+		this.handleMouseMove({ clientX: touch.clientX });
+	}
+
+	private handleMouseUp(event: PointerClientX): void {
 		if (this.session.kind !== "scrubbing") return;
 
 		const session = this.session;
@@ -314,5 +383,10 @@ export class PlayheadController {
 
 		this.session = { kind: "idle" };
 		this.deactivate();
+	}
+
+	private handleTouchEnd(event: TouchEvent): void {
+		const touch = event.changedTouches[0];
+		this.handleMouseUp({ clientX: touch?.clientX ?? this.lastMouseClientX });
 	}
 }

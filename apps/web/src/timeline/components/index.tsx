@@ -83,6 +83,7 @@ import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditor } from "@/editor/use-editor";
 import { useScrollPosition } from "@/timeline/hooks/use-scroll-position";
 import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
+import { useTimelineTouchPan } from "@/timeline/hooks/use-timeline-touch-pan";
 import { DragLine } from "./drag-line";
 import { invokeAction } from "@/actions";
 import { resolveTimelineElementIntersections } from "./selection-hit-testing";
@@ -293,6 +294,17 @@ export function Timeline() {
 		};
 	}, [syncFollowers]);
 
+	// 手机上手指拖动轨道区：平移完要把刻度尺和轨道名跟着走，并存回视图状态
+	const handleTimelinePan = useCallback(() => {
+		syncFollowers();
+		saveScrollPositionRef.current();
+	}, [syncFollowers]);
+
+	useTimelineTouchPan({
+		scrollRef: tracksScrollRef,
+		onPan: handleTimelinePan,
+	});
+
 	useInitialScrollBottom({
 		tracksScrollRef,
 		trackLabelsScrollRef,
@@ -300,8 +312,12 @@ export function Timeline() {
 		isReady: tracks.length > 0,
 	});
 
-	const { dragView, handleElementMouseDown, handleElementClick } =
-		useElementInteraction({
+	const {
+		dragView,
+		handleElementMouseDown,
+		handleElementTouchStart,
+		handleElementClick,
+	} = useElementInteraction({
 		zoomLevel,
 		tracksContainerRef,
 		tracksScrollRef,
@@ -321,14 +337,16 @@ export function Timeline() {
 		onSnapPointChange: handleSnapPointChange,
 	});
 
-	const { handleRulerMouseDown: handlePlayheadRulerMouseDown } =
-		useTimelinePlayhead({
-			zoomLevel,
-			rulerRef,
-			rulerScrollRef,
-			tracksScrollRef,
-			playheadRef,
-		});
+	const {
+		handleRulerMouseDown: handlePlayheadRulerMouseDown,
+		handleRulerTouchStart: handlePlayheadRulerTouchStart,
+	} = useTimelinePlayhead({
+		zoomLevel,
+		rulerRef,
+		rulerScrollRef,
+		tracksScrollRef,
+		playheadRef,
+	});
 
 	const { isDragOver, dropTarget, dragProps } = useTimelineDragDrop({
 		containerRef: tracksContainerRef,
@@ -435,6 +453,7 @@ export function Timeline() {
 			}
 			{...dragProps}
 			aria-label="Timeline"
+			data-mw-timeline="1"
 		>
 			<TimelineToolbar
 				zoomLevel={zoomLevel}
@@ -455,9 +474,7 @@ export function Timeline() {
 					className="relative isolate flex flex-1 flex-col overflow-hidden"
 					ref={tracksContainerRef}
 				>
-					<SelectionBox
-						bounds={selectionBox?.bounds ?? null}
-					/>
+					<SelectionBox bounds={selectionBox?.bounds ?? null} />
 					<DragLine
 						dropTarget={dropTarget}
 						tracks={tracks}
@@ -486,6 +503,7 @@ export function Timeline() {
 								handleTimelineContentClick={handleRulerClick}
 								handleRulerTrackingMouseDown={handleRulerMouseDown}
 								handleRulerMouseDown={handlePlayheadRulerMouseDown}
+								handleRulerTouchStart={handlePlayheadRulerTouchStart}
 							/>
 							<TimelineBookmarksRow
 								zoomLevel={zoomLevel}
@@ -550,6 +568,7 @@ export function Timeline() {
 										dragView={dragView}
 										onResizeStart={handleResizeStart}
 										onElementMouseDown={handleElementMouseDown}
+										onElementTouchStart={handleElementTouchStart}
 										onElementClick={handleElementClick}
 										onTrackMouseDown={(event) => {
 											handleSelectionMouseDown(event);
@@ -726,6 +745,7 @@ function TimelineTrackRows({
 	dragView,
 	onResizeStart,
 	onElementMouseDown,
+	onElementTouchStart,
 	onElementClick,
 	onTrackMouseDown,
 	onTrackMouseUp,
@@ -742,6 +762,9 @@ function TimelineTrackRows({
 	onElementMouseDown: React.ComponentProps<
 		typeof TimelineTrackContent
 	>["onElementMouseDown"];
+	onElementTouchStart: React.ComponentProps<
+		typeof TimelineTrackContent
+	>["onElementTouchStart"];
 	onElementClick: React.ComponentProps<
 		typeof TimelineTrackContent
 	>["onElementClick"];
@@ -780,8 +803,8 @@ function TimelineTrackRows({
 	const draggingElementIds = useMemo(
 		() =>
 			dragView.kind === "dragging"
-			? dragView.memberTimeOffsets
-			: (null as ReadonlyMap<string, MediaTime> | null),
+				? dragView.memberTimeOffsets
+				: (null as ReadonlyMap<string, MediaTime> | null),
 		[dragView],
 	);
 	const sortedTracks = useMemo(() => {
@@ -823,6 +846,7 @@ function TimelineTrackRows({
 								dragView={dragView}
 								onResizeStart={onResizeStart}
 								onElementMouseDown={onElementMouseDown}
+								onElementTouchStart={onElementTouchStart}
 								onElementClick={onElementClick}
 								onTrackMouseDown={onTrackMouseDown}
 								onTrackMouseUp={onTrackMouseUp}

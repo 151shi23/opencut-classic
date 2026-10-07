@@ -1,4 +1,3 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import {
 	addMediaTime,
@@ -46,6 +45,16 @@ interface ResizeSession {
 }
 
 type Session = { kind: "idle" } | ResizeSession;
+
+/**
+ * 触屏事件本身没有 clientX，鼠标事件又没有 touches。控制器只认「一个坐标 + 两个阻止默认的方法」，
+ * 所以起手入参用结构化类型，手指和鼠标都能直接喂进来。
+ */
+export interface ResizeStartInput {
+	clientX: number;
+	preventDefault(): void;
+	stopPropagation(): void;
+}
 
 // --- Config ---
 
@@ -112,7 +121,8 @@ export function buildResizeMembers({
 		const rightNeighborBound = otherElements
 			.filter(
 				(el) =>
-					el.startTime >= addMediaTime({ a: element.startTime, b: element.duration }),
+					el.startTime >=
+					addMediaTime({ a: element.startTime, b: element.duration }),
 			)
 			.reduce<MediaTime | null>(
 				(bound, el) =>
@@ -169,6 +179,7 @@ export class ResizeController {
 		this.onResizeStart = this.onResizeStart.bind(this);
 		this.handleMouseMove = this.handleMouseMove.bind(this);
 		this.handleMouseUp = this.handleMouseUp.bind(this);
+		this.handleTouchMove = this.handleTouchMove.bind(this);
 	}
 
 	private get config(): ResizeConfig {
@@ -200,7 +211,7 @@ export class ResizeController {
 		track,
 		side,
 	}: {
-		event: ReactMouseEvent;
+		event: ResizeStartInput;
 		element: TimelineElement;
 		track: TimelineTrack;
 		side: ResizeSide;
@@ -245,11 +256,20 @@ export class ResizeController {
 	private activate(): void {
 		document.addEventListener("mousemove", this.handleMouseMove);
 		document.addEventListener("mouseup", this.handleMouseUp);
+		// 触屏上手指一动就不会再派发 mousemove，裁剪要自己接住 touch。
+		document.addEventListener("touchmove", this.handleTouchMove, {
+			passive: false,
+		});
+		document.addEventListener("touchend", this.handleMouseUp);
+		document.addEventListener("touchcancel", this.handleMouseUp);
 	}
 
 	private deactivate(): void {
 		document.removeEventListener("mousemove", this.handleMouseMove);
 		document.removeEventListener("mouseup", this.handleMouseUp);
+		document.removeEventListener("touchmove", this.handleTouchMove);
+		document.removeEventListener("touchend", this.handleMouseUp);
+		document.removeEventListener("touchcancel", this.handleMouseUp);
 	}
 
 	private notify(): void {
@@ -314,7 +334,10 @@ export class ResizeController {
 			) {
 				closestSnapDistance = snapResult.snapDistance;
 				closestSnapPoint = snapResult.snapPoint;
-				deltaTime = subMediaTime({ a: snapResult.snappedTime, b: baseEdgeTime });
+				deltaTime = subMediaTime({
+					a: snapResult.snappedTime,
+					b: baseEdgeTime,
+				});
 			}
 		}
 
@@ -322,7 +345,7 @@ export class ResizeController {
 		return deltaTime;
 	}
 
-	private handleMouseMove({ clientX }: MouseEvent): void {
+	private handleMouseMove({ clientX }: { clientX: number }): void {
 		if (this.session.kind !== "active") return;
 		const session = this.session;
 
@@ -343,6 +366,15 @@ export class ResizeController {
 
 		session.result = result;
 		this.config.previewElements(result.updates);
+	}
+
+	private handleTouchMove(event: TouchEvent): void {
+		if (this.session.kind !== "active") return;
+		const touch = event.touches[0];
+		if (!touch) return;
+		// 手指位移不拦就被判成横向滚动，裁剪条会一直停在按下那一刻。
+		event.preventDefault();
+		this.handleMouseMove({ clientX: touch.clientX });
 	}
 
 	private handleMouseUp(): void {

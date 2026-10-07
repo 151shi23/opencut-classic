@@ -41,13 +41,17 @@ import type {
 	AudioElement,
 } from "@/timeline";
 import type { MediaAsset } from "@/media/types";
+import type { ResizeStartInput } from "@/timeline/controllers/resize-controller";
 import { mediaSupportsAudio } from "@/media/media-utils";
 import {
 	canToggleSourceAudio,
 	getSourceAudioActionLabel,
 	isSourceAudioSeparated,
 } from "@/timeline/audio-separation";
-import { buildWaveformGainSamples, isElementMuted } from "@/timeline/audio-state";
+import {
+	buildWaveformGainSamples,
+	isElementMuted,
+} from "@/timeline/audio-state";
 import { getTimelinePixelsPerSecond } from "@/timeline";
 import { buildWaveformSourceKey } from "@/media/waveform-summary";
 import { addMediaTime, type MediaTime, TICKS_PER_SECOND } from "@/wasm";
@@ -202,13 +206,17 @@ interface TimelineElementProps {
 	zoomLevel: number;
 	isSelected: boolean;
 	onResizeStart: (params: {
-		event: React.MouseEvent;
+		event: ResizeStartInput;
 		element: TimelineElementType;
 		track: TimelineTrack;
 		side: "left" | "right";
 	}) => void;
 	onElementMouseDown: (params: {
 		event: React.MouseEvent;
+		element: TimelineElementType;
+	}) => void;
+	onElementTouchStart: (params: {
+		event: React.TouchEvent;
 		element: TimelineElementType;
 	}) => void;
 	onElementClick: (params: {
@@ -226,6 +234,7 @@ export function TimelineElement({
 	isSelected,
 	onResizeStart,
 	onElementMouseDown,
+	onElementTouchStart,
 	onElementClick,
 	dragView,
 	isDropTarget = false,
@@ -401,6 +410,7 @@ export function TimelineElement({
 							expandedContent={expandedContent}
 							onElementClick={onElementClick}
 							onElementMouseDown={onElementMouseDown}
+							onElementTouchStart={onElementTouchStart}
 							onResizeStart={onResizeStart}
 							isDropTarget={isDropTarget}
 						/>
@@ -521,6 +531,7 @@ function ElementInner({
 	expandedContent,
 	onElementClick,
 	onElementMouseDown,
+	onElementTouchStart,
 	onResizeStart,
 	isDropTarget = false,
 }: {
@@ -539,8 +550,12 @@ function ElementInner({
 		event: React.MouseEvent;
 		element: TimelineElementType;
 	}) => void;
+	onElementTouchStart: (params: {
+		event: React.TouchEvent;
+		element: TimelineElementType;
+	}) => void;
 	onResizeStart: (params: {
-		event: React.MouseEvent;
+		event: ResizeStartInput;
 		element: TimelineElementType;
 		track: TimelineTrack;
 		side: "left" | "right";
@@ -575,12 +590,12 @@ function ElementInner({
 						isExpanded && "bg-background",
 					)}
 				>
-					<button
-						type="button"
-						tabIndex={-1}
-						className="absolute inset-0 size-full flex flex-col"
+					<div
 						onClick={(event) => onElementClick({ event, element })}
 						onMouseDown={(event) => onElementMouseDown({ event, element })}
+						onTouchStart={(event) => onElementTouchStart({ event, element })}
+						data-mw-element-surface=""
+						className="absolute inset-0 size-full flex flex-col touch-pan-y"
 					>
 						<div
 							className={cn(
@@ -599,7 +614,7 @@ function ElementInner({
 							</div>
 						</div>
 						{expandedContent}
-					</button>
+					</div>
 				</div>
 			</div>
 
@@ -633,7 +648,7 @@ function ResizeHandle({
 	element: TimelineElementType;
 	track: TimelineTrack;
 	onResizeStart: (params: {
-		event: React.MouseEvent;
+		event: ResizeStartInput;
 		element: TimelineElementType;
 		track: TimelineTrack;
 		side: "left" | "right";
@@ -643,11 +658,27 @@ function ResizeHandle({
 	return (
 		<button
 			type="button"
+			data-mw-resize-handle=""
 			className={cn(
-				"absolute top-0 bottom-0 w-2",
+				"absolute top-0 bottom-0 w-2 touch-none",
 				isLeft ? "-left-1 cursor-w-resize" : "-right-1 cursor-e-resize",
 			)}
 			onMouseDown={(event) => onResizeStart({ event, element, track, side })}
+			onTouchStart={(event) => {
+				const touch = event.touches[0];
+				if (!touch) return;
+				// React 的 TouchEvent 上没有 clientX，起手只喂第一根手指的坐标。
+				onResizeStart({
+					event: {
+						clientX: touch.clientX,
+						preventDefault: () => event.preventDefault(),
+						stopPropagation: () => event.stopPropagation(),
+					},
+					element,
+					track,
+					side,
+				});
+			}}
 			onClick={(event) => event.stopPropagation()}
 			aria-label={`${isLeft ? "Left" : "Right"} resize handle`}
 		></button>
@@ -909,7 +940,9 @@ function TextElementContent({
 	return (
 		<div className="flex size-full items-center justify-start pl-2">
 			<span className="truncate text-xs text-white">
-				{typeof element.params.content === "string" ? element.params.content : ""}
+				{typeof element.params.content === "string"
+					? element.params.content
+					: ""}
 			</span>
 		</div>
 	);

@@ -1,5 +1,5 @@
 import type { BlendMode } from "@/rendering";
-import type { EffectPass } from "@/effects/types";
+import type { EffectPass, ElementCanvas2d } from "@/effects/types";
 
 export type FrameDescriptor = {
 	width: number;
@@ -56,6 +56,7 @@ export type ExternalTextureDescriptor = {
 	source: CanvasImageSource;
 	width: number;
 	height: number;
+	canvas2d?: ElementCanvas2d | null;
 };
 
 /**
@@ -71,6 +72,7 @@ export type RenderedTextureDescriptor = {
 	width: number;
 	height: number;
 	draw: TextureCanvasDrawFn;
+	canvas2d?: ElementCanvas2d | null;
 };
 
 export type TextureUploadDescriptor =

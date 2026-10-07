@@ -194,24 +194,58 @@ export async function processMediaAssets({
 	return processedAssets;
 }
 
-const getMediaDuration = ({ file }: { file: File }): Promise<number> => {
-	return new Promise((resolve, reject) => {
+const METADATA_PROBE_TIMEOUT_MS = 8000;
+// 部分 WebView 只有 seek 到末尾才把 duration 算出来，否则一直报 Infinity
+const METADATA_SEEK_PROBE_SECONDS = 1e7;
+
+/**
+ * 时长拿不到就返回 undefined，让上层用别的来源兜底：
+ * 探针在个别机型上既不派发 loadedmetadata 也不派发 error，原来的写法会让这个
+ * Promise 永远不落地，整条导入链卡死（表现是点「+」毫无反应、上传停在处理中）。
+ */
+const getMediaDuration = ({
+	file,
+}: {
+	file: File;
+}): Promise<number | undefined> => {
+	return new Promise((resolve) => {
 		const element = document.createElement(
 			file.type.startsWith("video/") ? "video" : "audio",
 		) as HTMLVideoElement;
 		const objectUrl = URL.createObjectURL(file);
 
-		element.addEventListener("loadedmetadata", () => {
-			resolve(element.duration);
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
+		let settled = false;
+		const finish = ({ duration }: { duration?: number }) => {
+			if (settled) return;
+			settled = true;
+			if (timeoutId !== undefined) clearTimeout(timeoutId);
 			URL.revokeObjectURL(objectUrl);
 			element.remove();
+			resolve(duration);
+		};
+
+		timeoutId = setTimeout(() => finish({}), METADATA_PROBE_TIMEOUT_MS);
+
+		const readDuration = () =>
+			Number.isFinite(element.duration) && element.duration > 0
+				? element.duration
+				: undefined;
+
+		element.addEventListener("loadedmetadata", () => {
+			const duration = readDuration();
+			if (duration !== undefined) {
+				finish({ duration });
+				return;
+			}
+			element.addEventListener("durationchange", () => {
+				const duration = readDuration();
+				if (duration !== undefined) finish({ duration });
+			});
+			element.currentTime = METADATA_SEEK_PROBE_SECONDS;
 		});
 
-		element.addEventListener("error", () => {
-			reject(new Error("Could not load media"));
-			URL.revokeObjectURL(objectUrl);
-			element.remove();
-		});
+		element.addEventListener("error", () => finish({}));
 
 		element.src = objectUrl;
 		element.load();

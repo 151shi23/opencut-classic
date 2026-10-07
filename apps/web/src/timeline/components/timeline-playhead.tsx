@@ -47,21 +47,23 @@ export function TimelinePlayhead({
 	const internalPlayheadRef = useRef<HTMLDivElement>(null);
 	const playheadRef = externalPlayheadRef || internalPlayheadRef;
 
-	const { handlePlayheadMouseDown } = useTimelinePlayhead({
-		zoomLevel,
-		rulerRef,
-		rulerScrollRef,
-		tracksScrollRef,
-		playheadRef,
+	const { handlePlayheadMouseDown, handlePlayheadTouchStart } =
+		useTimelinePlayhead({
+			zoomLevel,
+			rulerRef,
+			rulerScrollRef,
+			tracksScrollRef,
+			playheadRef,
+		});
+	const { height: timelineHeight } = useContainerSize({
+		containerRef: timelineRef,
 	});
-	const { height: timelineHeight } = useContainerSize({ containerRef: timelineRef });
 	const { height: tracksHeight } = useContainerSize({
 		containerRef: tracksScrollRef,
 	});
 	const { scrollLeft } = useScrollPosition({ scrollRef: tracksScrollRef });
 
-	const timelineContainerHeight =
-		timelineHeight || tracksHeight || 400;
+	const timelineContainerHeight = timelineHeight || tracksHeight || 400;
 	const totalHeight = Math.max(
 		0,
 		timelineContainerHeight -
@@ -84,9 +86,7 @@ export function TimelinePlayhead({
 		event.preventDefault();
 		const fps = editor.project.getActive().settings.fps;
 		const ticksPerFrame = mediaTime({
-			ticks: Math.round(
-				(TICKS_PER_SECOND * fps.denominator) / fps.numerator,
-			),
+			ticks: Math.round((TICKS_PER_SECOND * fps.denominator) / fps.numerator),
 		});
 		const direction = event.key === "ArrowRight" ? 1 : -1;
 		const now = editor.playback.getCurrentTime();
@@ -127,8 +127,10 @@ export function TimelinePlayhead({
 			<button
 				type="button"
 				aria-label="Drag playhead"
-				className={`pointer-events-auto absolute top-1 left-1/2 size-3 -translate-x-1/2 transform cursor-col-resize rounded-full border-2 shadow-xs ${isSnappingToPlayhead ? "bg-primary border-primary" : "bg-primary border-primary/50"}`}
+				data-mw-playhead=""
+				className={`pointer-events-auto absolute top-1 left-1/2 size-3 -translate-x-1/2 transform cursor-col-resize touch-none rounded-full border-2 shadow-xs ${isSnappingToPlayhead ? "bg-primary border-primary" : "bg-primary border-primary/50"}`}
 				onMouseDown={handlePlayheadMouseDown}
+				onTouchStart={handlePlayheadTouchStart}
 			/>
 		</div>
 	);

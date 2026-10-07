@@ -59,7 +59,8 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 						const newProjectId = await editor.project.createNewProject({
 							name: "Untitled Project",
 						});
-						router.replace(`/editor/${newProjectId}`);
+						// 安卓移植版：静态导出只有 /editor/new/ 一个壳，真实 id 走查询参数
+						router.replace(`/editor/new?id=${newProjectId}`);
 					} catch (_createErr) {
 						setError("Failed to create project");
 						setIsLoading(false);
@@ -144,8 +145,33 @@ function EditorRuntimeBindings() {
 			(event as unknown as { returnValue: string }).returnValue = "";
 		};
 
+		/*
+		 * 手机上真正的丢数据路径不是关标签页，而是 WebView 被系统回收 / 用户直接切后台：
+		 * beforeunload 在这些场景根本不触发，flush 也就永远不会跑。pagehide 和
+		 * visibilitychange=hidden 才是可靠信号，所以这里补一次兜底落盘。
+		 */
+		let flushing: Promise<boolean> | null = null;
+		const flushOnExit = () => {
+			if (!editor.save.getIsDirty()) return;
+			if (!flushing) {
+				flushing = editor.save.flush().finally(() => {
+					flushing = null;
+				});
+			}
+		};
+
+		const handleVisibility = () => {
+			if (document.visibilityState === "hidden") flushOnExit();
+		};
+
 		window.addEventListener("beforeunload", handleBeforeUnload);
-		return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+		window.addEventListener("pagehide", flushOnExit);
+		document.addEventListener("visibilitychange", handleVisibility);
+		return () => {
+			window.removeEventListener("beforeunload", handleBeforeUnload);
+			window.removeEventListener("pagehide", flushOnExit);
+			document.removeEventListener("visibilitychange", handleVisibility);
+		};
 	}, [editor]);
 
 	useEditorActions();

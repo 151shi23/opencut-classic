@@ -18,7 +18,9 @@ export function MobileGate({ children }: MobileGateProps) {
 	const [show, setShow] = useState<boolean | null>(null);
 
 	useEffect(() => {
-		const isMobile = window.innerWidth < 1024;
+		// 安卓移植版：WebView 里就是移动设备，"Desktop only" 拦截门直接放行
+		//（原版 window.innerWidth < 1024 时会先弹"桌面端专用"）。
+		const isMobile = false;
 		const acknowledged = localStorage.getItem(STORAGE_KEY) === "true";
 		setShow(isMobile && !acknowledged);
 	}, []);

@@ -1,0 +1,272 @@
+/*
+ * 安卓移植版：手机横屏（约 850x390 CSS）下的紧凑布局。
+ *
+ * 只在 <html data-android="1"> 时生效（由 src/android/adapter.tsx 里的头部脚本
+ * 判定，浏览器里访问不启用），所以上游那套桌面尺寸不受影响。
+ *
+ * 垂直空间是唯一的稀缺资源：顶栏、预览控制条、时间轴工具条各吃掉几十像素，
+ * 三处一起压下来能多出近 40px 给画面和轨道。轨道高度和轨道名栏宽度不在这里
+ * 改 —— 那两个值由 src/timeline/components/layout.ts 的常量驱动，命中测试也用
+ * 同一份常量，CSS 单方面改会让点击坐标和画面对不上。
+ */
+
+/* 顶栏 3.4rem → 2.4rem */
+[data-android] header {
+	height: 2.4rem;
+	min-height: 2.4rem;
+	padding-inline: 0.4rem;
+}
+[data-android] header input {
+	height: 1.6rem;
+	font-size: 0.78rem;
+}
+[data-android] header button,
+[data-android] header a {
+	min-height: 1.6rem;
+	font-size: 0.78rem;
+}
+
+/* 预览下方的控制条（时间 / 播放键 / 缩放）：pb-3 pt-5 px-5 → 收紧 */
+[data-android] [class*="grid-cols-[1fr_auto_1fr]"] {
+	padding: 0.15rem 0.4rem 0.2rem;
+	gap: 0.2rem;
+}
+
+/* 时间轴工具条 40px → 30px（用 data 属性选，aria-label 可能被汉化掉） */
+[data-android] [data-mw-timeline] > div:first-child > div {
+	height: 1.9rem;
+}
+[data-android] [data-mw-timeline] {
+	border-radius: 2px;
+}
+
+/*
+ * 分隔条只有 1px，手指按不到：把命中区撑到 11px，视觉上仍是 1px 细线。
+ * 分隔条本身必须是定位元素，否则下面 inset:-5px 的伪元素会相对整个弹层定位，
+ * 变成一层盖住整张菜单的透明面板——实测所有菜单项都点不到。
+ * 撑开的 5px 落在分隔条自己的 my-1.5(6px) 外边距里，不会压住相邻菜单项。
+ */
+[data-android] [role="separator"] {
+	position: relative;
+}
+[data-android] [role="separator"]::before {
+	content: "";
+	position: absolute;
+	inset: -5px;
+}
+
+/* 面板内边距与字号整体降一档（只作用于面板外壳，避免误伤画布） */
+[data-android] .panel {
+	border-radius: 2px;
+}
+
+/* 面板头部（h-11 shrink-0 那排）在窄屏里放不下：上游是 overflow-hidden 的父容器，
+   放不下的部分会被裁掉且被相邻面板的覆盖层压住——实测 20% 宽的素材栏里
+   「导入」按钮中心点命中的是预览层的 absolute inset-0，手指根本按不到。
+   这里改成横向可滑，保证每个按钮都还在命中路径上。 */
+[data-android] .panel [class*="h-11"][class*="shrink-0"] {
+	overflow-x: auto;
+	scrollbar-width: none;
+	gap: 0.4rem;
+	padding-inline: 0.5rem;
+	touch-action: pan-x;
+}
+[data-android] .panel [class*="h-11"][class*="shrink-0"]::-webkit-scrollbar {
+	display: none;
+}
+
+/* 对话框在小屏里必须能滚，别被截断 */
+[data-android] [role="dialog"],
+[data-android] [role="menu"],
+[data-android] [role="listbox"],
+[data-android] [data-radix-popper-content-wrapper] {
+	max-height: 84dvh;
+	overflow-y: auto;
+}
+
+/* 弹出菜单/提示：触屏没有 hover，tooltip 别挡住内容 */
+[data-android] [role="tooltip"] {
+	display: none;
+}
+
+/* 长按别弹出系统的复制/搜索菜单（时间轴拖拽时很烦） */
+[data-android] [data-mw-timeline],
+[data-android] [data-panel-id] {
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/* 滚动条压扁，触屏本身有惯性滚动 */
+[data-android] ::-webkit-scrollbar {
+	width: 4px;
+	height: 4px;
+}
+
+/*
+ * 项目卡片的 ⋯ 菜单键：图标按钮只有 36px 见方，手指按不准，撑到 44px。
+ * 不能用 aria-label 选——localize.ts 会把英文 aria-label 汉化，选择器就失效了。
+ */
+[data-android] [data-mw-project-menu] {
+	width: 2.75rem;
+	height: 2.75rem;
+}
+
+/*
+ * 长按是这套界面唯一的菜单入口，但 WebView 的长按同时会触发系统原生选取气泡
+ * （复制/搜索/分享），气泡浮在菜单之上并把后续触摸全部吃掉。卡片禁掉 callout
+ * 和文本选取，长按就只走 Radix。
+ */
+[data-android] [data-mw-project-card] {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/*
+ * 素材区的卡片同理，而且更致命：长按在这里是「拖进时间线」的起手式，
+ * 系统一旦弹出缩略图气泡/原生选取菜单，手势就被接管，拖拽根本不会开始，
+ * 弹层还会把 body 的 pointer-events 关掉，整机按什么都没反应。
+ * 卡片连里面的图一起禁掉，长按只留给 HTML5 拖拽。
+ */
+[data-android] [draggable="true"],
+[data-android] [draggable="true"] * {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/*
+ * 动画面板：属性栏在横屏手机上只有约 210px，两列横排会把「向上飞入」截成两个字，
+ * 所以竖排——图标在上、名字在下，名字独占一行才放得下。
+ * 选中态靠描边+底色表达，勾掉右上角的对勾（竖排时它会把名字挤下去）。
+ */
+[data-android] [data-mw-anim-tile] {
+	flex-direction: column;
+	justify-content: center;
+	gap: 0.2rem;
+	min-height: 3.4rem;
+	padding-inline: 0.25rem;
+}
+[data-android] [data-mw-anim-tile] > span {
+	width: 100%;
+	flex: none;
+	text-align: center;
+	font-size: 0.68rem;
+	line-height: 1.1;
+}
+[data-android] .mw-anim-check {
+	display: none;
+}
+/* 窄栏里组标题那一行要留给「清除」，「片段开头」这类说明在手机上省略 */
+[data-android] [data-mw-anim-caption] {
+	display: none;
+}
+[data-android] [data-mw-anim-slider] {
+	min-height: 1.6rem;
+}
+[data-android] [data-mw-anim-slider] [role="slider"] {
+	width: 1.3rem;
+	height: 1.3rem;
+}
+
+/*
+ * 预览全屏：WebView 里 requestFullscreen() 要么被忽略、要么不派发 fullscreenchange，
+ * 所以安卓模式下直接把预览面板铺满视口（见 src/hooks/use-fullscreen.ts）。
+ * 用 100dvh 而不是 100vh：软键盘/系统栏弹出时只有 dvh 是真高度。
+ */
+[data-android] .mw-preview-fullscreen {
+	position: fixed !important;
+	inset: 0 !important;
+	z-index: 9999 !important;
+	width: 100vw !important;
+	height: 100dvh !important;
+	max-width: none !important;
+	max-height: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: #000 !important;
+}
+
+/*
+ * 播放指针旋钮只有 12px，手指按不到：视觉不变，用透明伪元素把命中区撑到 30px。
+ * 旋钮本身已经 touch-action:none，手指在它上面横向拖动才不会被判成滚动。
+ */
+[data-android] [data-mw-playhead]::before {
+	content: "";
+	position: absolute;
+	inset: -9px;
+}
+
+/*
+ * 拖素材的过程中把工程区描出来：手机上落点区小，看不见边界就容易拖空。
+ * 只加描边和底色，不改任何尺寸——尺寸由 use-drop-zone-boost 在起手时一次性调好，
+ * 拖拽中途再改布局会让落点跟着漂。
+ */
+[data-android][data-mw-dragging] [data-mw-timeline] {
+	outline: 1px solid var(--primary);
+	outline-offset: -1px;
+}
+[data-android][data-mw-dragging] [data-mw-timeline]::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background: color-mix(in oklab, var(--primary) 8%, transparent);
+}
+
+/*
+ * 裁剪把手桌面只有 8px 宽，手指按不住，也看不见。手机上撑到 22px 命中区，
+ * 中间画一条亮杠（剪映那种选中片段后两端出现的把手）。
+ * 把手本身 touch-action:none，所以手指在把手上横拖不会被判成滚动时间轴。
+ */
+[data-android] [data-mw-resize-handle] {
+	width: 22px;
+	z-index: 10;
+}
+[data-android] [data-mw-resize-handle]::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 4px;
+	height: 62%;
+	transform: translate(-50%, -50%);
+	border-radius: 9999px;
+	background: var(--primary);
+	box-shadow: 0 0 0 1px color-mix(in oklab, var(--background) 55%, transparent);
+}
+
+/* 区域隐藏/恢复开关：手指目标，别带 hover 态，也别被工具条挤扁。 */
+[data-android] [data-mw-panel-toggle] {
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+	min-width: 2rem;
+}
+
+/*
+ * 预览画面上的变换把手（四角缩放、边、旋转、蒙版点）桌面命中区只有 18px，手指
+ * 按不准，起手十有八九落在把手外，看起来就像"只能填数字调大小"。视觉尺寸不动，
+ * 用透明伪元素把命中区撑到 38px —— 和播放指针旋钮一个套路。
+ * 拖不动的根因不在这里：touch-action 已统一在 handle-primitives 里声明成 none，
+ * 否则手指位移会被 WebView 判成滚动并派发 pointercancel，预览被回滚（回弹）。
+ */
+[data-android] [data-mw-canvas-handle] {
+	-webkit-tap-highlight-color: transparent;
+}
+[data-android] [data-mw-canvas-handle]::before {
+	content: "";
+	position: absolute;
+	inset: -10px;
+}
+
+/*
+ * 片段体上游写的是 touch-pan-y（竖向交给浏览器滚轨道列表）。手机上这一格留不得：
+ * 拇指起手几乎都带点上飘，WebView 一旦把这段位移判成竖向滚动，就派发 touchcancel
+ * 并把后续 touchmove 全部收走 —— 拖拽会话停在按下那一刻，松手素材弹回原位，
+ * 看起来就是「同轨道拖不动，只能填数字」。
+ * 改成 none 之后手势归我们：横向改时间、竖向换轨道，跟剪映一致；滚动轨道列表
+ * 仍然可以用轨道空白处和标尺（use-timeline-touch-pan 只放行片段体以外的起手）。
+ */
+[data-android] [data-mw-element-surface] {
+	touch-action: none;
+}

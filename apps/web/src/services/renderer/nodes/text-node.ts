@@ -1,6 +1,6 @@
 import { BaseNode } from "./base-node";
 import type { TextElement } from "@/timeline";
-import type { EffectPass } from "@/effects/types";
+import type { EffectPass, ElementCanvas2d } from "@/effects/types";
 import type { BlendMode, Transform } from "@/rendering";
 import { drawMeasuredTextLayout } from "@/text/primitives";
 import type { MeasuredTextElement } from "@/text/measure-element";
@@ -14,12 +14,28 @@ export type TextNodeParams = TextElement & {
 	textBaseline?: CanvasTextBaseline;
 };
 
+/** 安卓移植新增：文字描边 / 阴影（剪映同款）。 */
+export interface ResolvedTextStroke {
+	color: string;
+	width: number;
+}
+
+export interface ResolvedTextShadow {
+	color: string;
+	blur: number;
+	offsetX: number;
+	offsetY: number;
+}
+
 export interface ResolvedTextNodeState {
 	transform: Transform;
 	opacity: number;
 	textColor: string;
 	backgroundColor: string;
+	stroke: ResolvedTextStroke | null;
+	shadow: ResolvedTextShadow | null;
 	effectPasses: EffectPass[][];
+	canvas2d: ElementCanvas2d | null;
 	measuredText: MeasuredTextElement;
 }
 
@@ -54,6 +70,8 @@ export function renderTextToContext({
 		textColor: resolved.textColor,
 		background: resolved.measuredText.resolvedBackground,
 		backgroundColor: resolved.backgroundColor,
+		stroke: resolved.stroke,
+		shadow: resolved.shadow,
 		textBaseline: baseline,
 	});
 

@@ -4,6 +4,7 @@ import * as React from "react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/utils/ui";
+import { isAndroidUI } from "@/android/detect";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
 	Tick02Icon,
@@ -20,7 +21,16 @@ function ContextMenu({
 		onOpenChange,
 	});
 	return (
-		<ContextMenuPrimitive.Root onOpenChange={handleOpenChange} {...props} />
+		<ContextMenuPrimitive.Root
+			/*
+			 * 触屏上长按同时是「右键菜单」和「拖拽起手式」。Radix 默认模态：菜单一开
+			 * 就把 body 的 pointer-events 关掉，长按素材时拖拽被掐死、整页按什么都
+			 * 没反应。App 内改非模态——菜单照开照点，但锁不住页面。
+			 */
+			modal={!isAndroidUI()}
+			onOpenChange={handleOpenChange}
+			{...props}
+		/>
 	);
 }
 

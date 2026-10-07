@@ -43,12 +43,15 @@ import {
 	Layers01Icon,
 	Chart03Icon,
 	Unlink02Icon,
+	UndoIcon,
+	RedoIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { OcRippleIcon } from "@/components/icons";
 import { GraphEditorPopover } from "./graph-editor/popover";
 import { PopoverTrigger } from "@/components/ui/popover";
 import { useGraphEditorController } from "./graph-editor/use-controller";
+import { MwPanelToolbarButtons } from "@/android/panel-toggles";
 
 export function TimelineToolbar({
 	zoomLevel,
@@ -70,6 +73,10 @@ export function TimelineToolbar({
 	return (
 		<ScrollArea className="scrollbar-hidden">
 			<div className="flex h-10 items-center justify-between border-b px-2 py-1">
+				{/* 侧栏隐藏/恢复开关统一放这条栏最左边：工具条横向可滚，放右边会被挤到
+				    屏幕外，腾地方这种操作反而找不到入口。预览和工程区强制显示，不给开关。 */}
+				<MwPanelToolbarButtons />
+
 				<ToolbarLeftSection />
 
 				<SceneSelector />
@@ -90,6 +97,8 @@ function ToolbarLeftSection() {
 	const mediaAssets = useEditor((currentEditor) =>
 		currentEditor.media.getAssets(),
 	);
+	const canUndo = useEditor((currentEditor) => currentEditor.command.canUndo());
+	const canRedo = useEditor((currentEditor) => currentEditor.command.canRedo());
 	const { selectedElements } = useElementSelection();
 	const graphEditor = useGraphEditorController();
 	const isCurrentlyBookmarked = useEditor((e) =>
@@ -142,6 +151,23 @@ function ToolbarLeftSection() {
 	return (
 		<div className="flex items-center gap-1">
 			<TooltipProvider delayDuration={500}>
+				{/* 剪映把撤销/恢复放在时间轴工具条最左端，这里对齐；面板开关仍留在更外侧。 */}
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={UndoIcon} />}
+					tooltip="Undo"
+					disabled={!canUndo}
+					onClick={({ event }) => handleAction({ action: "undo", event })}
+				/>
+
+				<ToolbarButton
+					icon={<HugeiconsIcon icon={RedoIcon} />}
+					tooltip="Redo"
+					disabled={!canRedo}
+					onClick={({ event }) => handleAction({ action: "redo", event })}
+				/>
+
+				<div className="bg-border mx-1 h-6 w-px" />
+
 				<ToolbarButton
 					icon={<HugeiconsIcon icon={ScissorIcon} />}
 					tooltip="Split element"

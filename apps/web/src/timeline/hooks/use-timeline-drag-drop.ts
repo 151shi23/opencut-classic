@@ -43,6 +43,7 @@ export function useTimelineDragDrop({
 
 	const [, rerender] = useReducer((n: number) => n + 1, 0);
 	useEffect(() => controller.subscribe(rerender), [controller]);
+	useEffect(() => controller.attachDocumentGuards(), [controller]);
 	useEffect(() => () => controller.destroy(), [controller]);
 
 	return {

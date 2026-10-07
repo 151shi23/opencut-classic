@@ -1,4 +1,5 @@
 import type { DragEvent } from "react";
+import { toast } from "sonner";
 import { processMediaAssets } from "@/media/processing";
 import { showMediaUploadToast } from "@/media/upload-toast";
 import {
@@ -13,11 +14,13 @@ import {
 	buildStickerElement,
 	buildElementFromMedia,
 	buildEffectElement,
+	isVisualElement,
 } from "@/timeline/element-utils";
 import { AddTrackCommand, InsertElementCommand } from "@/commands/timeline";
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import { computeDropTarget } from "@/timeline/components/drop-target";
+import { effectsRegistry } from "@/effects/registry";
 import type { TimelineDragSource } from "@/timeline/drag-source";
 import type {
 	TrackType,
@@ -136,6 +139,10 @@ function orderedTracks({
 export class DragDropController {
 	private state: DragDropState = { kind: "idle" };
 	private enterCount = 0;
+	/** 触屏长按拖动时 dragover 是逐帧来的，合并到每帧最多算一次目标位。 */
+	private pendingOver: DragEvent | null = null;
+	private overFrame: number | null = null;
+	private lastOverKey = "";
 	private readonly subscribers = new Set<() => void>();
 	private readonly configRef: DragDropConfigRef;
 
@@ -145,6 +152,25 @@ export class DragDropController {
 		this.onDragOver = this.onDragOver.bind(this);
 		this.onDragLeave = this.onDragLeave.bind(this);
 		this.onDrop = this.onDrop.bind(this);
+	}
+
+	// 拖拽落到时间线之外时，浏览器会执行默认动作（WebView 会直接打开被拖的图片）。
+	// 只要素材拖拽还在进行，就把它按住。
+	private handleDocumentDragOver = (event: globalThis.DragEvent): void => {
+		if (this.configRef.current.dragSource.isActive()) event.preventDefault();
+	};
+
+	private handleDocumentDrop = (event: globalThis.DragEvent): void => {
+		if (this.configRef.current.dragSource.isActive()) event.preventDefault();
+	};
+
+	attachDocumentGuards(): () => void {
+		document.addEventListener("dragover", this.handleDocumentDragOver);
+		document.addEventListener("drop", this.handleDocumentDrop);
+		return () => {
+			document.removeEventListener("dragover", this.handleDocumentDragOver);
+			document.removeEventListener("drop", this.handleDocumentDrop);
+		};
 	}
 
 	private get config(): DragDropConfig {
@@ -169,6 +195,11 @@ export class DragDropController {
 	}
 
 	destroy(): void {
+		if (this.overFrame !== null) {
+			cancelAnimationFrame(this.overFrame);
+			this.overFrame = null;
+		}
+		this.pendingOver = null;
 		this.subscribers.clear();
 	}
 
@@ -188,7 +219,30 @@ export class DragDropController {
 
 	onDragOver(event: DragEvent): void {
 		event.preventDefault();
+		// dropEffect 必须在本帧的事件里就设好，不然指针显示成禁止符号。
+		if (this.config.dragSource.isActive()) {
+			event.dataTransfer.dropEffect = "copy";
+		}
+		this.pendingOver = event;
+		if (this.overFrame !== null) return;
+		this.overFrame = requestAnimationFrame(() => {
+			this.overFrame = null;
+			const pending = this.pendingOver;
+			this.pendingOver = null;
+			if (pending) this.applyDragOver(pending);
+		});
+	}
 
+	private flushOver(): void {
+		if (this.overFrame === null) return;
+		cancelAnimationFrame(this.overFrame);
+		this.overFrame = null;
+		const pending = this.pendingOver;
+		this.pendingOver = null;
+		if (pending) this.applyDragOver(pending);
+	}
+
+	private applyDragOver(event: DragEvent): void {
 		const coords = this.getMouseTimelineCoords({ event });
 		if (!coords) return;
 
@@ -197,7 +251,8 @@ export class DragDropController {
 		const isExternal = hasFiles && !dragData;
 
 		if (!dragData) {
-			if (hasFiles && isExternal) {
+			// 外部文件没有落点可算，只在刚进入时通知一次；否则逐帧 dragover 会一直触发整条时间线重渲染。
+			if (hasFiles && isExternal && this.state.kind !== "over") {
 				this.setOver({ dropTarget: null, elementType: null });
 			}
 			return;
@@ -229,8 +284,18 @@ export class DragDropController {
 			? roundFrameTime({ time: target.xPosition, fps })
 			: target.xPosition;
 
+		// 手指停在同一个落点时 dragover 仍然一直触发，整条时间线没必要跟着重渲染。
+		const key = [
+			String(elementType),
+			target.trackIndex,
+			target.isNewTrack,
+			String(target.insertPosition),
+			String(target.xPosition),
+			target.targetElement?.elementId ?? "",
+		].join("|");
+		if (key === this.lastOverKey && this.state.kind === "over") return;
+		this.lastOverKey = key;
 		this.setOver({ dropTarget: target, elementType });
-		event.dataTransfer.dropEffect = "copy";
 	}
 
 	onDragLeave(event: DragEvent): void {
@@ -238,6 +303,11 @@ export class DragDropController {
 		if (this.enterCount === 0) return;
 		this.enterCount -= 1;
 		if (this.enterCount === 0) {
+			if (this.overFrame !== null) {
+				cancelAnimationFrame(this.overFrame);
+				this.overFrame = null;
+				this.pendingOver = null;
+			}
 			this.setIdle();
 		}
 	}
@@ -245,6 +315,8 @@ export class DragDropController {
 	onDrop(event: DragEvent): void {
 		event.preventDefault();
 		this.enterCount = 0;
+		// 落点状态是按帧算的，drop 可能赶在最后一帧之前，先把它结算掉。
+		this.flushOver();
 
 		const dragData = this.config.dragSource.getActive();
 		const hasFiles = event.dataTransfer.files?.length > 0;
@@ -281,11 +353,15 @@ export class DragDropController {
 		elementType: ElementType | null;
 	}): void {
 		this.state = { kind: "over", ...state };
+		if (!state.dropTarget) {
+			this.lastOverKey = "";
+		}
 		this.notify();
 	}
 
 	private setIdle(): void {
 		this.state = { kind: "idle" };
+		this.lastOverKey = "";
 		this.notify();
 	}
 
@@ -470,6 +546,19 @@ export class DragDropController {
 			return;
 		}
 
+		// Canvas2D 通道（调色 / 滤镜 / 叠加）只在元素纹理上传前生效，整帧特效轨走的是
+		// wasm 着色器。所以拖到空白处按剪映的滤镜习惯处理：应用到时间线上全部画面素材。
+		if (
+			effectsRegistry.has(dragData.effectType) &&
+			effectsRegistry.get(dragData.effectType).renderer.canvas2d
+		) {
+			this.applyCanvas2dEffectToClips({
+				effectType: dragData.effectType,
+				name: dragData.name,
+			});
+			return;
+		}
+
 		const element = buildEffectElement({
 			effectType: dragData.effectType,
 			startTime: target.xPosition,
@@ -488,6 +577,38 @@ export class DragDropController {
 		}
 
 		this.insertAtTarget({ element, target, trackType: "effect" });
+	}
+
+	/** 调色 / 滤镜类特效拖到空白处：给全部画面素材各挂一份，等价于剪映的「应用到全部」。 */
+	private applyCanvas2dEffectToClips({
+		effectType,
+		name,
+	}: {
+		effectType: string;
+		name: string;
+	}): void {
+		const tracks = orderedTracks({ sceneTracks: this.config.getSceneTracks() });
+		let applied = 0;
+		for (const track of tracks) {
+			if (!("elements" in track)) continue;
+			for (const element of track.elements) {
+				if (!isVisualElement(element)) continue;
+				if (element.effects?.some((effect) => effect.type === effectType))
+					continue;
+				this.config.addClipEffect({
+					trackId: track.id,
+					elementId: element.id,
+					effectType,
+				});
+				applied += 1;
+			}
+		}
+
+		if (applied === 0) {
+			toast.error("时间线上还没有画面素材，先把视频或图片拖进来");
+			return;
+		}
+		toast.success(`已把「${name}」应用到 ${applied} 个素材`);
 	}
 
 	private async executeFileDrop({

@@ -41,6 +41,8 @@ export function TextView() {
 				aspectRatio={1}
 				onAddToTimeline={handleAddToTimeline}
 				shouldShowLabel={false}
+				/* 触屏无 hover：不加这行，手机上没有任何「加文字」的入口（只能拖） */
+				plusAlwaysVisible
 			/>
 		</PanelView>
 	);

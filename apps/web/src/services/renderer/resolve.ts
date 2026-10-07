@@ -6,7 +6,12 @@ import {
 	intensityToSigma,
 } from "@/effects/definitions/blur";
 import { effectsRegistry, resolveEffectPasses } from "@/effects";
-import type { Effect, EffectPass } from "@/effects/types";
+import type {
+	Effect,
+	EffectCanvas2dResult,
+	EffectPass,
+	ElementCanvas2d,
+} from "@/effects/types";
 import { getSourceTimeAtClipTime } from "@/retime";
 import {
 	DEFAULT_GRAPHIC_SOURCE_SIZE,
@@ -96,36 +101,88 @@ async function resolveNode({
 	);
 }
 
-function resolveEffectPassGroups({
+function resolveElementEffects({
 	effects,
 	animations,
 	localTime,
 	width,
 	height,
+	sourceWidth,
+	sourceHeight,
 }: {
 	effects: Effect[] | undefined;
 	animations: VisualNodeParams["animations"];
 	localTime: number;
 	width: number;
 	height: number;
-}): EffectPass[][] {
-	return (effects ?? [])
-		.filter((effect) => effect.enabled)
-		.map((effect) => {
-			const resolvedParams = resolveEffectParamsAtTime({
-				effectId: effect.id,
-				params: effect.params,
-				animations,
-				localTime,
-			});
-			const definition = effectsRegistry.get(effect.type);
-			return resolveEffectPasses({
-				definition,
-				effectParams: resolvedParams,
-				width,
-				height,
-			});
+	sourceWidth: number;
+	sourceHeight: number;
+}): { effectPasses: EffectPass[][]; canvas2d: ElementCanvas2d | null } {
+	const effectPasses: EffectPass[][] = [];
+	const filters: string[] = [];
+	const paints: NonNullable<EffectCanvas2dResult["paint"]>[] = [];
+	const canvasKeys: string[] = [];
+
+	for (const effect of (effects ?? []).filter((item) => item.enabled)) {
+		// 工程数据里可能残留已经下线或从未注册的特效类型（旧版本、内置插件写进来的）。
+		// 认不出来就当没有这条特效：逐帧抛错会让整个预览永久黑屏。
+		if (!effectsRegistry.has(effect.type)) continue;
+
+		const resolvedParams = resolveEffectParamsAtTime({
+			effectId: effect.id,
+			params: effect.params,
+			animations,
+			localTime,
 		});
+		const definition = effectsRegistry.get(effect.type);
+		const buildCanvas2d = definition.renderer.canvas2d;
+		if (buildCanvas2d) {
+			const result = buildCanvas2d({
+				effectParams: resolvedParams,
+				width: sourceWidth,
+				height: sourceHeight,
+			});
+			if (result.filter) {
+				filters.push(result.filter);
+			}
+			if (result.paint) {
+				paints.push(result.paint);
+			}
+			canvasKeys.push(`${effect.type}:${JSON.stringify(resolvedParams)}`);
+			continue;
+		}
+
+		const passes = resolveEffectPasses({
+			definition,
+			effectParams: resolvedParams,
+			width,
+			height,
+		});
+		if (passes.length > 0) {
+			effectPasses.push(passes);
+		}
+	}
+
+	if (filters.length === 0 && paints.length === 0) {
+		return { effectPasses, canvas2d: null };
+	}
+
+	const collectedPaints = paints;
+	return {
+		effectPasses,
+		canvas2d: {
+			key: canvasKeys.join(";"),
+			filter: filters.length > 0 ? filters.join(" ") : null,
+			paint:
+				collectedPaints.length === 0
+					? null
+					: (args) => {
+							for (const paint of collectedPaints) {
+								paint(args);
+							}
+						},
+		},
+	};
 }
 
 function resolveVisualState({
@@ -174,12 +231,14 @@ function resolveVisualState({
 		localTime,
 		transform,
 		opacity,
-		effectPasses: resolveEffectPassGroups({
+		...resolveElementEffects({
 			effects: params.effects,
 			animations: params.animations,
 			localTime,
 			width: effectWidth,
 			height: effectHeight,
+			sourceWidth,
+			sourceHeight,
 		}),
 	};
 }
@@ -205,7 +264,9 @@ async function resolveVideoNode({
 	const frame = await videoCache.getFrameAt({
 		mediaId: node.params.mediaId,
 		file: node.params.file,
-		time: mediaTimeToSeconds({ time: roundMediaTime({ time: sourceTimeTicks }) }),
+		time: mediaTimeToSeconds({
+			time: roundMediaTime({ time: sourceTimeTicks }),
+		}),
 	});
 	if (!frame) {
 		return null;
@@ -333,6 +394,24 @@ function resolveTextNode({
 	});
 	const background = buildTextBackgroundFromElement({ element: node.params });
 
+	// 安卓移植新增：描边 / 阴影（剪映同款）。开关不参与关键帧，颜色可以。
+	const strokeEnabled = node.params.params["stroke.enabled"] === true;
+	const shadowEnabled = node.params.params["shadow.enabled"] === true;
+	const strokeWidth =
+		typeof node.params.params["stroke.width"] === "number"
+			? node.params.params["stroke.width"]
+			: 4;
+
+	const textEffects = resolveElementEffects({
+		effects: node.params.effects,
+		animations: node.params.animations,
+		localTime,
+		width: context.renderer.width,
+		height: context.renderer.height,
+		sourceWidth: context.renderer.width,
+		sourceHeight: context.renderer.height,
+	});
+
 	return {
 		transform: resolveTransformAtTime({
 			baseTransform: node.params.transform,
@@ -359,13 +438,43 @@ function resolveTextNode({
 			propertyPath: "background.color",
 			localTime,
 		}),
-		effectPasses: resolveEffectPassGroups({
-			effects: node.params.effects,
-			animations: node.params.animations,
-			localTime,
-			width: context.renderer.width,
-			height: context.renderer.height,
-		}),
+		stroke:
+			strokeEnabled && strokeWidth > 0
+				? {
+						color: resolveColorAtTime({
+							baseColor:
+								typeof node.params.params["stroke.color"] === "string"
+									? node.params.params["stroke.color"]
+									: "#000000",
+							animations: node.params.animations,
+							propertyPath: "stroke.color",
+							localTime,
+						}),
+						width: strokeWidth,
+					}
+				: null,
+		shadow: shadowEnabled
+			? {
+					color:
+						typeof node.params.params["shadow.color"] === "string"
+							? node.params.params["shadow.color"]
+							: "#000000",
+					blur:
+						typeof node.params.params["shadow.blur"] === "number"
+							? node.params.params["shadow.blur"]
+							: 8,
+					offsetX:
+						typeof node.params.params["shadow.offsetX"] === "number"
+							? node.params.params["shadow.offsetX"]
+							: 0,
+					offsetY:
+						typeof node.params.params["shadow.offsetY"] === "number"
+							? node.params.params["shadow.offsetY"]
+							: 4,
+				}
+			: null,
+		effectPasses: textEffects.effectPasses,
+		canvas2d: textEffects.canvas2d,
 		measuredText: measureTextElement({
 			element: node.params,
 			canvasHeight: node.params.canvasHeight,
@@ -426,7 +535,9 @@ async function resolveBackdropSource({
 		const frame = await videoCache.getFrameAt({
 			mediaId: node.params.mediaId,
 			file: node.params.file,
-			time: mediaTimeToSeconds({ time: roundMediaTime({ time: sourceTimeTicks }) }),
+			time: mediaTimeToSeconds({
+				time: roundMediaTime({ time: sourceTimeTicks }),
+			}),
 		});
 		if (!frame) {
 			return null;
@@ -459,6 +570,10 @@ function resolveEffectLayerNode({
 		time < node.params.timeOffset - 1e-6 ||
 		time >= node.params.timeOffset + node.params.duration + 1e-6
 	) {
+		return null;
+	}
+
+	if (!effectsRegistry.has(node.params.effectType)) {
 		return null;
 	}
 

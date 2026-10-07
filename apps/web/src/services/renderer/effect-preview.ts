@@ -58,6 +58,27 @@ class EffectPreviewService {
 					? params
 					: buildDefaultParamValues(definition.params);
 
+			const buildCanvas2d = definition.renderer.canvas2d;
+			if (buildCanvas2d) {
+				const result = buildCanvas2d({
+					effectParams: resolvedParams,
+					width: size,
+					height: size,
+				});
+				const staged = new OffscreenCanvas(size, size);
+				const stagedCtx = staged.getContext("2d");
+				if (stagedCtx) {
+					if (result.filter) {
+						stagedCtx.filter = result.filter;
+					}
+					stagedCtx.drawImage(source, 0, 0);
+					stagedCtx.filter = "none";
+					result.paint?.({ ctx: stagedCtx, width: size, height: size });
+					targetCtx.drawImage(staged, 0, 0, size, size);
+					return;
+				}
+			}
+
 			const passes = resolveEffectPasses({
 				definition,
 				effectParams: resolvedParams,

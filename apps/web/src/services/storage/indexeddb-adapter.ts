@@ -4,6 +4,7 @@ export class IndexedDBAdapter<T> implements StorageAdapter<T> {
 	private dbName: string;
 	private storeName: string;
 	private version: number;
+	private dbPromise: Promise<IDBDatabase> | null = null;
 
 	constructor({
 		dbName,
@@ -20,11 +21,30 @@ export class IndexedDBAdapter<T> implements StorageAdapter<T> {
 	}
 
 	private async getDB(): Promise<IDBDatabase> {
-		return new Promise((resolve, reject) => {
+		// 以前每个 get/set 都 open 一次且从不 close：加载一个工程的媒体就是几十次
+		// open，连接挂在 IDB 上不放，工程一大就先在这里炸。
+		if (this.dbPromise) return await this.dbPromise;
+
+		const promise = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = indexedDB.open(this.dbName, this.version);
 
-			request.onerror = () => reject(request.error);
-			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => {
+				this.dbPromise = null;
+				reject(request.error);
+			};
+			request.onsuccess = () => {
+				const db = request.result;
+				// 缓存连接后必须让路：不响应 versionchange 会永久卡住任何升级，
+				// 表现是"改了版本号之后这个库再也打不开"
+				db.onversionchange = () => {
+					db.close();
+					this.dbPromise = null;
+				};
+				db.onclose = () => {
+					this.dbPromise = null;
+				};
+				resolve(db);
+			};
 
 			request.onupgradeneeded = (event) => {
 				const db = (event.target as IDBOpenDBRequest).result;
@@ -33,6 +53,9 @@ export class IndexedDBAdapter<T> implements StorageAdapter<T> {
 				}
 			};
 		});
+
+		this.dbPromise = promise;
+		return await promise;
 	}
 
 	async get(key: string): Promise<T | null> {

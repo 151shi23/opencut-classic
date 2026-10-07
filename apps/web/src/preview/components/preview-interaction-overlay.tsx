@@ -72,6 +72,10 @@ export function PreviewInteractionOverlay() {
 				role="application"
 				aria-label="Preview canvas"
 				style={{
+					/* 不写这行，手指在画面上一划就被 WebView 当成页面滚动，
+					   它派发 pointercancel，控制器按「手势被打断」回滚预览 ——
+					   手机上就是「素材拖不动、一松手弹回原位」。 */
+					touchAction: "none",
 					cursor: viewport.isPanning
 						? "grabbing"
 						: viewport.canPan

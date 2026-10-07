@@ -1,5 +1,5 @@
 import { BaseNode } from "./base-node";
-import type { Effect, EffectPass } from "@/effects/types";
+import type { Effect, EffectPass, ElementCanvas2d } from "@/effects/types";
 import type { Mask } from "@/masks/types";
 import type { BlendMode, Transform } from "@/rendering";
 import type { RetimeConfig, VisualElement } from "@/timeline";
@@ -23,6 +23,7 @@ export interface ResolvedVisualNodeState {
 	transform: Transform;
 	opacity: number;
 	effectPasses: EffectPass[][];
+	canvas2d: ElementCanvas2d | null;
 }
 
 export interface ResolvedVisualSourceNodeState extends ResolvedVisualNodeState {

@@ -12,3 +12,13 @@
 next-env.d.ts
 
 *.tsbuildinfo
+
+# 字幕识别的构建产物：worker.js + ORT wasm 运行时（build:transcription 生成）
+public/transcription/
+# 预取的 Whisper 权重（fetch-transcription-model 生成，几十 MB 二进制）
+public/models/
+# 内置贴纸资产：由 bun scripts/build-sticker-assets.ts 从 Iconify + CLDR 生成，不进仓库
+public/stickers/
+
+# 静态导出产物（几百 MB，永远不进仓库）
+out/

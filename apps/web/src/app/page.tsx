@@ -1,21 +1,20 @@
-import { Hero } from "@/components/landing/hero";
-import { Header } from "@/components/header";
-import { Footer } from "@/components/footer";
-import type { Metadata } from "next";
-import { SITE_URL } from "@/site/brand";
+"use client";
 
-export const metadata: Metadata = {
-	alternates: {
-		canonical: SITE_URL,
-	},
-};
+// 安卓移植版：原落地页是服务端组件（构建期要联网拉 Marble CMS / 遥测），
+// 离线静态版用不到官网 —— 直接进项目列表。
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default async function Home() {
+export default function Home() {
+	const router = useRouter();
+
+	useEffect(() => {
+		router.replace("/projects/");
+	}, [router]);
+
 	return (
-		<div>
-			<Header />
-			<Hero />
-			<Footer />
+		<div className="bg-background flex h-screen w-screen items-center justify-center">
+			<p className="text-muted-foreground text-sm">Loading OpenCut…</p>
 		</div>
 	);
 }

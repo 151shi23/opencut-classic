@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { DraggableItem } from "@/components/editor/panels/assets/draggable-item";
-import { effectsRegistry, EFFECT_TARGET_ELEMENT_TYPES } from "@/effects";
+import { effectsRegistry, EFFECT_TARGET_ELEMENT_TYPES, isCanvas2dEffect } from "@/effects";
 import { effectPreviewService } from "@/services/renderer/effect-preview";
 import { useEditor } from "@/editor/use-editor";
 import { buildEffectElement } from "@/timeline/element-utils";
@@ -55,8 +55,26 @@ function EffectPreviewCanvas({ effectType }: { effectType: string }) {
 
 function EffectItem({ effect }: { effect: EffectDefinition }) {
 	const editor = useEditor();
+	// Canvas2D 通道（调色 / 滤镜 / 叠加）没有整帧落点：wasm 那侧只认得已注册的
+	// 着色器，所以这类特效只能挂到具体素材上。触屏没有 hover，加号要一直显示，
+	// 点一下就是「给当前选中的素材加这个特效」。
+	const isClipOnly = isCanvas2dEffect({ definition: effect });
+	const hasClipTarget = useEditor(
+		(e) => e.selection.getSelectedElements().length > 0,
+	);
 
 	const handleAddToTimeline = useCallback(() => {
+		if (isClipOnly) {
+			const target = editor.selection.getSelectedElements()[0];
+			if (!target) return;
+			editor.timeline.addClipEffect({
+				trackId: target.trackId,
+				elementId: target.elementId,
+				effectType: effect.type,
+			});
+			return;
+		}
+
 		const currentTime = editor.playback.getCurrentTime();
 		const element = buildEffectElement({
 			effectType: effect.type,
@@ -67,7 +85,7 @@ function EffectItem({ effect }: { effect: EffectDefinition }) {
 			placement: { mode: "auto", trackType: "effect" },
 			element,
 		});
-	}, [editor, effect.type]);
+	}, [editor, effect.type, isClipOnly]);
 
 	const preview = <EffectPreviewCanvas effectType={effect.type} />;
 
@@ -83,6 +101,7 @@ function EffectItem({ effect }: { effect: EffectDefinition }) {
 				targetElementTypes: EFFECT_TARGET_ELEMENT_TYPES,
 			}}
 			onAddToTimeline={handleAddToTimeline}
+			plusAlwaysVisible={isClipOnly && hasClipTarget}
 			aspectRatio={1}
 			isRounded
 			variant="card"

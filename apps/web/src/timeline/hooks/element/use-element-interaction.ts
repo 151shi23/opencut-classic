@@ -82,6 +82,7 @@ export function useElementInteraction({
 	return {
 		dragView: controller.view,
 		handleElementMouseDown: controller.onElementMouseDown,
+		handleElementTouchStart: controller.onElementTouchStart,
 		handleElementClick: controller.onElementClick,
 	};
 }

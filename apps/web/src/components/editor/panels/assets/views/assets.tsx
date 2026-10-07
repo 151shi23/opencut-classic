@@ -364,7 +364,11 @@ function MediaItemList({
 		>
 			{items.map((item) => (
 				<MediaItemWithContextMenu item={item} onRemove={onRemove} key={item.id}>
-					<SelectableItem className={cn(!isGrid && "w-full")} id={item.id}>
+					<SelectableItem
+						className={cn(!isGrid && "w-full", "touch-manipulation")}
+						id={item.id}
+						onDoubleClick={openContextMenuOnDoubleClick}
+					>
 						<MediaAssetDraggable
 							item={item}
 							preview={
@@ -380,6 +384,25 @@ function MediaItemList({
 				</MediaItemWithContextMenu>
 			))}
 		</div>
+	);
+}
+
+/**
+ * 长按是拖拽的起手式，手机上不能再用它弹菜单（安卓也没有右键），所以改成快速点两下：
+ * 在触发节点上补发一个 contextmenu，Radix 按真实右键的路径打开，位置也跟着手指。
+ */
+function openContextMenuOnDoubleClick(event: React.MouseEvent<HTMLDivElement>) {
+	event.preventDefault();
+	if (event.detail < 2) return;
+
+	event.currentTarget.dispatchEvent(
+		new MouseEvent("contextmenu", {
+			bubbles: true,
+			cancelable: true,
+			view: window,
+			clientX: event.clientX,
+			clientY: event.clientY,
+		}),
 	);
 }
 
@@ -454,6 +477,7 @@ function MediaPreview({
 					className="object-cover"
 					loading="lazy"
 					unoptimized
+					draggable={false}
 				/>
 			</div>
 		);
@@ -471,6 +495,7 @@ function MediaPreview({
 						className="rounded object-cover"
 						loading="lazy"
 						unoptimized
+						draggable={false}
 					/>
 					{shouldShowDurationBadge ? (
 						<MediaDurationBadge duration={item.duration} />

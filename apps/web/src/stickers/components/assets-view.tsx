@@ -176,7 +176,9 @@ function StickersContentView() {
 		browseContent,
 		clearRecentStickers,
 		isBrowsing,
+		isLoadingMore,
 		isSearching,
+		loadMoreSection,
 		searchQuery,
 		searchResults,
 		selectedCategory,
@@ -249,6 +251,11 @@ function StickersContentView() {
 					key={section.id}
 					section={section}
 					onClearRecent={clearRecentStickers}
+					isCurrentCategory={section.action?.category === selectedCategory}
+					isLoadingMore={isLoadingMore}
+					onLoadMore={() => {
+						void loadMoreSection({ sectionId: section.id });
+					}}
 					onSeeAll={(category) => {
 						setSelectedCategory({ category });
 					}}
@@ -262,10 +269,16 @@ function StickerSection({
 	section,
 	onClearRecent,
 	onSeeAll,
+	onLoadMore,
+	isCurrentCategory,
+	isLoadingMore,
 }: {
 	section: StickerBrowseSection;
 	onClearRecent: () => void;
 	onSeeAll: (category: StickerCategory) => void;
+	onLoadMore: () => void;
+	isCurrentCategory: boolean;
+	isLoadingMore: boolean;
 }) {
 	const hasHeader =
 		Boolean(section.title) || section.id === "recent" || section.action;
@@ -292,18 +305,34 @@ function StickerSection({
 							</Button>
 						)}
 
-						{section.action?.type === "see-all" && section.action.category && (
-							<Button
-								variant="text"
-								size="sm"
-								className="h-auto gap-1 p-0 text-xs text-primary"
-								onClick={() => {
-									onSeeAll(section.action?.category as StickerCategory);
-								}}
-							>
-								See all
-							</Button>
-						)}
+						{/*
+						 * 同一个按钮在两种场景下意思不同：在「全部」里是切到该分类
+						 * （See all），在分类页签里是「这一页之外还有，接着翻」（Load more）。
+						 * 以前两种情况都只做 setSelectedCategory，分类页签里等于把分类设成
+						 * 它自己 —— 值没变，点了什么也不会发生。
+						 */}
+						{section.action?.type === "see-all" &&
+							section.action.category &&
+							(!isCurrentCategory || section.hasMore) && (
+								<Button
+									variant="text"
+									size="sm"
+									disabled={isCurrentCategory && isLoadingMore}
+									className="h-auto gap-1 p-0 text-xs text-primary"
+									onClick={() => {
+										if (isCurrentCategory) {
+											onLoadMore();
+											return;
+										}
+										onSeeAll(section.action?.category as StickerCategory);
+									}}
+								>
+									{isCurrentCategory && isLoadingMore && (
+										<Spinner className="size-3" />
+									)}
+									{isCurrentCategory ? "Load more" : "See all"}
+								</Button>
+							)}
 					</div>
 				</div>
 			)}
@@ -443,6 +472,11 @@ function StickerItem({
 				shouldShowLabel={false}
 				isRounded
 				variant="card"
+				/*
+				 * 触屏没有 hover，不加这条的话加号一直是 opacity-0 + pointer-events-none，
+				 * 手机上就只剩「拖」这一条路（音效面板已经踩过同一个坑）。
+				 */
+				plusAlwaysVisible
 				containerClassName={containerClassName ?? "w-full"}
 			/>
 			{isAdding && (

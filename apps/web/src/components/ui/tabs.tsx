@@ -30,7 +30,14 @@ const TabsList = React.forwardRef<
 		<TabsPrimitive.List
 			ref={ref}
 			className={cn(
-				"text-muted-foreground inline-flex h-auto items-center gap-0 bg-transparent p-0",
+				/*
+				 * 页签超出容器时必须能横向滑：以前只有 inline-flex + nowrap，
+				 * overflow 还是默认的 visible，内容直接超出被父层裁掉，看着就是
+				 * 「一排标签点不到后面的」。touch-pan-x 是关键 —— 不加的话手机上
+				 * 横向手势会被外层竖向滚动容器抢走，等于还是滑不动。
+				 * 滚动条本身隐藏（手机上会占高度，且这里用滑动不需要轨道）。
+				 */
+				"text-muted-foreground inline-flex h-auto items-center gap-0 overflow-x-auto overflow-y-hidden bg-transparent p-0 touch-pan-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 				variant === "default" && "rounded-lg",
 				variant === "underline" && "border-b border-border w-full gap-0 px-2",
 				className,
@@ -50,7 +57,7 @@ const TabsTrigger = React.forwardRef<
 		<TabsPrimitive.Trigger
 			ref={ref}
 			className={cn(
-				"ring-offset-background focus-visible:ring-ring inline-flex cursor-pointer items-center justify-center text-sm font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
+				"ring-offset-background focus-visible:ring-ring inline-flex shrink-0 cursor-pointer items-center justify-center text-sm font-medium whitespace-nowrap focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
 				variant === "default" &&
 					"border border-transparent data-[state=active]:bg-secondary data-[state=active]:border-secondary-border data-[state=active]:text-secondary-foreground rounded-md px-2.5 h-6.5",
 				variant === "underline" &&

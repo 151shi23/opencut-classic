@@ -6,12 +6,19 @@ export function useRafLoop(callback: ({ time }: { time: number }) => void) {
 
 	useEffect(() => {
 		const loop = ({ time }: { time: number }) => {
-			if (previousTimeRef.current !== null) {
-				const deltaTime = time - previousTimeRef.current;
-				callback({ time: deltaTime });
-			}
+			const previousTime = previousTimeRef.current;
 			previousTimeRef.current = time;
-			requestRef.current = requestAnimationFrame((time) => loop({ time }));
+			requestRef.current = requestAnimationFrame((nextTime) =>
+				loop({ time: nextTime }),
+			);
+
+			if (previousTime === null) return;
+
+			try {
+				callback({ time: time - previousTime });
+			} catch {
+				// 单帧回调抛错不能让循环停摆：下一帧已经排好，预览还能自己恢复。
+			}
 		};
 
 		requestRef.current = requestAnimationFrame((time) => loop({ time }));

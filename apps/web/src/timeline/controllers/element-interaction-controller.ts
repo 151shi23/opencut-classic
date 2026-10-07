@@ -1,4 +1,7 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+	MouseEvent as ReactMouseEvent,
+	TouchEvent as ReactTouchEvent,
+} from "react";
 import {
 	buildMoveGroup,
 	resolveGroupMove,
@@ -18,6 +21,7 @@ import {
 } from "@/wasm";
 import { TIMELINE_DRAG_THRESHOLD_PX } from "@/timeline/components/interaction";
 import type { FrameRate } from "opencut-wasm";
+import { isAndroidUI } from "@/android/detect";
 import { computeDropTarget } from "@/timeline/components/drop-target";
 import { getMouseTimeFromClientX } from "@/timeline/drag-utils";
 import { generateUUID } from "@/utils/id";
@@ -295,6 +299,8 @@ export class ElementInteractionController {
 	// has already returned to idle, so the "was this a drag?" answer must
 	// outlive the session. Reset on the next mousedown.
 	private lastGestureWasDrag = false;
+	// touchend 可能带不上 changedTouches（系统打断手势时），留一个最后已知坐标兜底。
+	private lastPointer = { clientX: 0, clientY: 0 };
 
 	private readonly subscribers = new Set<() => void>();
 	private readonly depsRef: ElementInteractionDepsRef;
@@ -368,11 +374,64 @@ export class ElementInteractionController {
 		}
 
 		event.stopPropagation();
+		this.beginPress({
+			clientX: event.clientX,
+			clientY: event.clientY,
+			elementRect: event.currentTarget.getBoundingClientRect(),
+			isMultiKey: event.metaKey || event.ctrlKey || event.shiftKey,
+			element,
+			track,
+		});
+	};
+
+	/**
+	 * 触屏上 Chrome 只在抬指那一刻补发 mousedown，靠 mouse 起手跟不上手指，
+	 * 所以 touchstart 直接开同一个会话，后续由 touchmove 连续喂坐标。
+	 */
+	onElementTouchStart = ({
+		event,
+		element,
+		track,
+	}: {
+		event: ReactTouchEvent;
+		element: TimelineElement;
+		track: TimelineTrack;
+	}): void => {
+		const touch = event.touches[0];
+		if (!touch) return;
+
+		event.stopPropagation();
+		this.beginPress({
+			clientX: touch.clientX,
+			clientY: touch.clientY,
+			elementRect: event.currentTarget.getBoundingClientRect(),
+			isMultiKey: false,
+			element,
+			track,
+		});
+	};
+
+	private beginPress({
+		clientX,
+		clientY,
+		elementRect,
+		isMultiKey,
+		element,
+		track,
+	}: {
+		clientX: number;
+		clientY: number;
+		elementRect: DOMRect;
+		isMultiKey: boolean;
+		element: TimelineElement;
+		track: TimelineTrack;
+	}): void {
 		this.lastGestureWasDrag = false;
+		this.lastPointer = { clientX, clientY };
 
 		const ref = { trackId: track.id, elementId: element.id };
 
-		if (event.metaKey || event.ctrlKey || event.shiftKey) {
+		if (isMultiKey) {
 			this.deps.selection.handleClick({ ...ref, isMultiKey: true });
 		}
 
@@ -383,13 +442,13 @@ export class ElementInteractionController {
 		this.session = {
 			kind: "pending",
 			mousedown: {
-				origin: { x: event.clientX, y: event.clientY },
+				origin: { x: clientX, y: clientY },
 				elementId: element.id,
 				trackId: track.id,
 				startElementTime: element.startTime,
 				clickOffsetTime: pixelToClickOffsetTime({
-					clientX: event.clientX,
-					elementRect: event.currentTarget.getBoundingClientRect(),
+					clientX,
+					elementRect,
 					zoomLevel: this.deps.viewport.getZoomLevel(),
 				}),
 				selectedElements,
@@ -397,7 +456,7 @@ export class ElementInteractionController {
 		};
 		this.activate();
 		this.notify();
-	};
+	}
 
 	onElementClick = ({
 		event,
@@ -432,11 +491,20 @@ export class ElementInteractionController {
 	private activate(): void {
 		document.addEventListener("mousemove", this.handleMouseMove);
 		document.addEventListener("mouseup", this.handleMouseUp);
+		// 手指一动就不会再派发 mousemove，片段拖拽要自己接住 touch。
+		document.addEventListener("touchmove", this.handleTouchMove, {
+			passive: false,
+		});
+		document.addEventListener("touchend", this.handleTouchEnd);
+		document.addEventListener("touchcancel", this.handleTouchEnd);
 	}
 
 	private deactivate(): void {
 		document.removeEventListener("mousemove", this.handleMouseMove);
 		document.removeEventListener("mouseup", this.handleMouseUp);
+		document.removeEventListener("touchmove", this.handleTouchMove);
+		document.removeEventListener("touchend", this.handleTouchEnd);
+		document.removeEventListener("touchcancel", this.handleTouchEnd);
 	}
 
 	private notify(): void {
@@ -526,7 +594,13 @@ export class ElementInteractionController {
 				: null;
 	}
 
-	private handleMouseMove = ({ clientX, clientY }: MouseEvent): void => {
+	private handleMouseMove = ({
+		clientX,
+		clientY,
+	}: {
+		clientX: number;
+		clientY: number;
+	}): void => {
 		const scrollContainer = this.deps.viewport.getTracksScrollEl();
 		if (!scrollContainer) return;
 
@@ -677,7 +751,13 @@ export class ElementInteractionController {
 		this.notify();
 	}
 
-	private handleMouseUp = ({ clientX, clientY }: MouseEvent): void => {
+	private handleMouseUp = ({
+		clientX,
+		clientY,
+	}: {
+		clientX: number;
+		clientY: number;
+	}): void => {
 		if (this.session.kind === "pending") {
 			this.finishSession();
 			return;
@@ -727,5 +807,37 @@ export class ElementInteractionController {
 		}
 
 		this.finishSession();
+	};
+
+	private handleTouchMove = (event: TouchEvent): void => {
+		const touch = event.touches[0];
+		if (!touch) return;
+
+		const { clientX, clientY } = touch;
+		this.lastPointer = { clientX, clientY };
+
+		if (this.session.kind !== "idle" && !isAndroidUI()) {
+			const { origin } = this.session.mousedown;
+			const dx = Math.abs(clientX - origin.x);
+			const dy = Math.abs(clientY - origin.y);
+			// 竖着划是想滚轨道列表，让给浏览器；只有横向占优的位移才接管成拖拽。
+			if (dy > dx && dy > TIMELINE_DRAG_THRESHOLD_PX) {
+				this.cancel();
+				return;
+			}
+		}
+		// 手机上这条让渡必须整个关掉：片段体已经是 touch-action:none（见 android.css），
+		// 浏览器滚不动了，再 cancel 就等于把用户这次拖拽白白丢掉 —— 素材原地回弹。
+		// 而且拇指起手常带上飘，按「相对起点的 dy>dx」判轴会在头几像素就误杀整次拖拽。
+		// 手机上一律跟随手指：横向改时间、竖向换轨道，跟剪映一致。
+
+		// 手指位移不拦就被判成页面滚动，拖拽会一直停在按下那一刻。
+		event.preventDefault();
+		this.handleMouseMove({ clientX, clientY });
+	};
+
+	private handleTouchEnd = (event: TouchEvent): void => {
+		const { clientX, clientY } = event.changedTouches[0] ?? this.lastPointer;
+		this.handleMouseUp({ clientX, clientY });
 	};
 }

@@ -6,19 +6,25 @@ import type { TimelineTrack } from "@/timeline";
 import type { TimelineElement as TimelineElementType } from "@/timeline";
 import { TIMELINE_LAYERS } from "./layers";
 import type { ElementDragView } from "@/timeline";
+import type { ResizeStartInput } from "@/timeline/controllers/resize-controller";
 
 interface TimelineTrackContentProps {
 	track: TimelineTrack;
 	zoomLevel: number;
 	dragView: ElementDragView;
 	onResizeStart: (params: {
-		event: React.MouseEvent;
+		event: ResizeStartInput;
 		element: TimelineElementType;
 		track: TimelineTrack;
 		side: "left" | "right";
 	}) => void;
 	onElementMouseDown: (params: {
 		event: React.MouseEvent;
+		element: TimelineElementType;
+		track: TimelineTrack;
+	}) => void;
+	onElementTouchStart: (params: {
+		event: React.TouchEvent;
 		element: TimelineElementType;
 		track: TimelineTrack;
 	}) => void;
@@ -39,6 +45,7 @@ export function TimelineTrackContent({
 	dragView,
 	onResizeStart,
 	onElementMouseDown,
+	onElementTouchStart,
 	onElementClick,
 	onTrackMouseDown,
 	onTrackMouseUp,
@@ -98,6 +105,9 @@ export function TimelineTrackContent({
 								}
 								onElementMouseDown={({ event, element }) =>
 									onElementMouseDown({ event, element, track })
+								}
+								onElementTouchStart={({ event, element }) =>
+									onElementTouchStart({ event, element, track })
 								}
 								onElementClick={({ event, element }) =>
 									onElementClick({ event, element, track })

@@ -166,19 +166,27 @@ function NumberField({
 
 	const handleIconPointerDown = (event: React.PointerEvent) => {
 		if (!onScrub || disabled || event.button !== 0) return;
+		event.preventDefault();
 		const parsed = parseFloat(String(value ?? "0"));
 		startValueRef.current = Number.isNaN(parsed) ? 0 : parsed;
 		cumulativeDeltaRef.current = 0;
-		let hasReceivedFirstMove = false;
-		iconRef.current?.requestPointerLock();
 
-		const handlePointerMove = (moveEvent: PointerEvent) => {
-			// first movementX after pointer lock often contains a bogus warp delta
-			if (!hasReceivedFirstMove) {
-				hasReceivedFirstMove = true;
-				return;
+		// 指针锁只有桌面鼠标能用：触屏上 requestPointerLock 不生效、movementX 恒为 0，
+		// 在数字上左右拖就完全不动。所以按 pointerType 分流，非鼠标改用 clientX 位移。
+		let locked = false;
+		if (event.pointerType === "mouse") {
+			try {
+				event.currentTarget.requestPointerLock();
+				locked = true;
+			} catch {
+				locked = false;
 			}
-			cumulativeDeltaRef.current += moveEvent.movementX;
+		}
+		let lastX = event.clientX;
+		let skipFirstLockedMove = locked;
+
+		const applyPixelDelta = (pixelDelta: number) => {
+			cumulativeDeltaRef.current += pixelDelta;
 			const newValue = scrubRanges
 				? scrubAcrossRanges({
 						startValue: startValueRef.current,
@@ -192,10 +200,24 @@ function NumberField({
 			onScrub(newValue);
 		};
 
+		const handlePointerMove = (moveEvent: PointerEvent) => {
+			if (locked) {
+				// first movementX after pointer lock often contains a bogus warp delta
+				if (skipFirstLockedMove) {
+					skipFirstLockedMove = false;
+					return;
+				}
+				applyPixelDelta(moveEvent.movementX);
+				return;
+			}
+			applyPixelDelta(moveEvent.clientX - lastX);
+			lastX = moveEvent.clientX;
+		};
+
 		const handlePointerUp = () => {
 			document.removeEventListener("pointermove", handlePointerMove);
 			document.removeEventListener("pointerup", handlePointerUp);
-			document.exitPointerLock();
+			if (locked) document.exitPointerLock();
 			onScrubEnd?.();
 		};
 
@@ -258,7 +280,7 @@ function NumberField({
 						type="button"
 						aria-label="Drag to adjust value"
 						disabled={disabled}
-						className="text-muted-foreground [&_svg]:size-3.5! shrink-0 select-none pl-2.5 text-sm leading-none cursor-ew-resize"
+						className="text-muted-foreground [&_svg]:size-3.5! shrink-0 select-none pl-2.5 text-sm leading-none cursor-ew-resize touch-none"
 						onMouseDown={(event) => event.preventDefault()}
 						onPointerDown={handleIconPointerDown}
 					>

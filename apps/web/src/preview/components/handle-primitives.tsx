@@ -51,12 +51,15 @@ export function HandleButton({
 				width: hitAreaSize,
 				height: hitAreaSize,
 				pointerEvents: "auto",
+				touchAction: "none",
 				cursor,
 			}}
+			data-mw-canvas-handle=""
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerLeave={onPointerUp}
+			onPointerCancel={onPointerUp}
 			onKeyDown={(event) => event.key === "Enter" && event.preventDefault()}
 			onKeyUp={(event) => event.key === "Enter" && event.preventDefault()}
 		>
@@ -233,12 +236,14 @@ export function BoundingBoxOutline({
 				transform: `rotate(${rotation}deg)`,
 				transformOrigin: "center center",
 				pointerEvents: onPointerDown ? "auto" : "none",
+				touchAction: "none",
 				cursor,
 			}}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerLeave={onPointerUp}
+			onPointerCancel={onPointerUp}
 		>
 			<rect
 				x={0.5}
@@ -290,12 +295,14 @@ export function ShapeOutline({
 				transform: `rotate(${rotation}deg)`,
 				transformOrigin: "center center",
 				pointerEvents: onPointerDown ? "auto" : "none",
+				touchAction: "none",
 				cursor,
 			}}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerLeave={onPointerUp}
+			onPointerCancel={onPointerUp}
 		>
 			<path
 				d={pathData}
@@ -341,12 +348,14 @@ export function CanvasPathOutline({
 			focusable="false"
 			style={{
 				pointerEvents: onPointerDown ? "auto" : "none",
+				touchAction: "none",
 				cursor,
 			}}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerLeave={onPointerUp}
+			onPointerCancel={onPointerUp}
 		>
 			<g
 				transform={`translate(${translateX} ${translateY}) scale(${scaleX} ${scaleY})`}
@@ -404,12 +413,14 @@ export function LineOverlay({
 						top: cy - LINE_HIT_AREA_SIZE / 2,
 						height: LINE_HIT_AREA_SIZE,
 						pointerEvents: "auto",
+						touchAction: "none",
 						cursor,
 					}}
 					onPointerDown={onPointerDown}
 					onPointerMove={onPointerMove}
 					onPointerUp={onPointerUp}
 					onPointerLeave={onPointerUp}
+					onPointerCancel={onPointerUp}
 				/>
 			)}
 			<div

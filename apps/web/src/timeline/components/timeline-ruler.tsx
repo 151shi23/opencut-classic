@@ -18,6 +18,7 @@ interface TimelineRulerProps {
 	handleTimelineContentClick: (e: React.MouseEvent) => void;
 	handleRulerTrackingMouseDown: (e: React.MouseEvent) => void;
 	handleRulerMouseDown: (e: React.MouseEvent) => void;
+	handleRulerTouchStart: (e: React.TouchEvent) => void;
 }
 
 export function TimelineRuler({
@@ -29,6 +30,7 @@ export function TimelineRuler({
 	handleTimelineContentClick,
 	handleRulerTrackingMouseDown,
 	handleRulerMouseDown,
+	handleRulerTouchStart,
 }: TimelineRulerProps) {
 	const durationTicks = useEditor((e) => e.timeline.getTotalDuration());
 	const durationSeconds = mediaTimeToSeconds({ time: durationTicks });
@@ -121,12 +123,13 @@ export function TimelineRuler({
 			<div
 				role="none"
 				ref={rulerRef}
-				className="relative cursor-default select-none"
+				className="relative cursor-default select-none touch-none"
 				style={{
 					height: TIMELINE_RULER_HEIGHT_PX,
 					width: `${dynamicTimelineWidth}px`,
 				}}
 				onMouseDown={handleRulerMouseDown}
+				onTouchStart={handleRulerTouchStart}
 			>
 				{timelineTicks}
 			</div>

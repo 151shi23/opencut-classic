@@ -245,7 +245,11 @@ function EffectSection({
 	onToggle?: () => void;
 	onRemove?: () => void;
 }) {
-	const definition = effectsRegistry.get(effect.type);
+	const definition = effectsRegistry.has(effect.type)
+		? effectsRegistry.get(effect.type)
+		: null;
+
+	if (!definition) return null;
 
 	return (
 		<Section

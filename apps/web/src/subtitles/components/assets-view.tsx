@@ -1,21 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { useReducer, useRef, useState } from "react";
+import { useReducer, useRef } from "react";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import { useEditor } from "@/editor/use-editor";
 import { TRANSCRIPTION_DIAGNOSTICS_SCOPE } from "@/transcription/diagnostics";
 import { DEFAULT_TRANSCRIPTION_SAMPLE_RATE } from "@/transcription/audio";
-import { TRANSCRIPTION_LANGUAGES } from "@/transcription/supported-languages";
 import type {
 	CaptionChunk,
-	TranscriptionLanguage,
 	TranscriptionProgress,
 } from "@/transcription/types";
 import { transcriptionService } from "@/services/transcription/service";
@@ -84,8 +75,6 @@ function processingReducer(
 /* eslint-enable opencut/prefer-object-params */
 
 export function Captions() {
-	const [selectedLanguage, setSelectedLanguage] =
-		useState<TranscriptionLanguage>("auto");
 	const [processing, dispatch] = useReducer(processingReducer, IDLE_STATE);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,7 +93,10 @@ export function Captions() {
 				step: `Loading model ${Math.round(progress.progress)}%`,
 			});
 		} else if (progress.status === "transcribing") {
-			dispatch({ type: "update_step", step: "Transcribing..." });
+			dispatch({
+				type: "update_step",
+				step: `Transcribing ${Math.round(progress.progress)}%`,
+			});
 		}
 	};
 
@@ -134,7 +126,6 @@ export function Captions() {
 
 			const result = await transcriptionService.transcribe({
 				audioData: samples,
-				language: selectedLanguage === "auto" ? undefined : selectedLanguage,
 				onProgress: handleProgress,
 			});
 
@@ -221,19 +212,6 @@ export function Captions() {
 		await handleImportFile({ file });
 	};
 
-	const handleLanguageChange = ({ value }: { value: string }) => {
-		if (value === "auto") {
-			setSelectedLanguage("auto");
-			return;
-		}
-
-		const matchedLanguage = TRANSCRIPTION_LANGUAGES.find(
-			(language) => language.code === value,
-		);
-		if (!matchedLanguage) return;
-		setSelectedLanguage(matchedLanguage.code);
-	};
-
 	const error = processing.status === "idle" ? processing.error : null;
 	const warnings = processing.status === "idle" ? processing.warnings : [];
 
@@ -289,23 +267,14 @@ export function Captions() {
 			>
 				<SectionContent className="flex flex-col gap-4 h-full pt-1">
 					<SectionFields>
+						{/*
+						 * 语言不再可选：引擎侧压不住非中文输出（transformers.js 的
+						 * suppress_tokens 整段是注释掉的），带背景音乐的素材会整条翻成外文，
+						 * 所以 worker 里写死中文 + 结果按汉字拦截。留一个只说明状态的标签，
+						 * 不放一个点了没用的下拉。
+						 */}
 						<SectionField label="Language">
-							<Select
-								value={selectedLanguage}
-								onValueChange={(value) => handleLanguageChange({ value })}
-							>
-								<SelectTrigger>
-									<SelectValue placeholder="Select a language" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="auto">Auto detect</SelectItem>
-									{TRANSCRIPTION_LANGUAGES.map((language) => (
-										<SelectItem key={language.code} value={language.code}>
-											{language.name}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
+							<p className="text-muted-foreground text-sm">Chinese only</p>
 						</SectionField>
 					</SectionFields>
 
@@ -325,7 +294,7 @@ export function Captions() {
 					)}
 					{warnings.length > 0 && (
 						<div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
-							<ul className="space-y-1 text-sm text-amber-700">
+							<ul className="text-sm">
 								{warnings.map((warning) => (
 									<li key={warning}>{warning}</li>
 								))}

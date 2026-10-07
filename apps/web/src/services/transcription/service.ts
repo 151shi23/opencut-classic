@@ -1,5 +1,4 @@
 import type {
-	TranscriptionLanguage,
 	TranscriptionResult,
 	TranscriptionProgress,
 	TranscriptionModelId,
@@ -20,12 +19,10 @@ class TranscriptionService {
 
 	async transcribe({
 		audioData,
-		language = "auto",
 		modelId = DEFAULT_TRANSCRIPTION_MODEL,
 		onProgress,
 	}: {
 		audioData: Float32Array;
-		language?: TranscriptionLanguage;
 		modelId?: TranscriptionModelId;
 		onProgress?: ProgressCallback;
 	}): Promise<TranscriptionResult> {
@@ -51,10 +48,11 @@ class TranscriptionService {
 
 					case "transcribe-complete":
 						this.worker?.removeEventListener("message", handleMessage);
+						// 语言在 worker 里写死，面板不再决定；这里只是把结果标出来
 						resolve({
 							text: response.text,
 							segments: response.segments,
-							language,
+							language: "zh",
 						});
 						break;
 
@@ -75,7 +73,6 @@ class TranscriptionService {
 			this.worker.postMessage({
 				type: "transcribe",
 				audio: audioData,
-				language,
 			} satisfies WorkerMessage);
 		});
 	}
@@ -111,7 +108,12 @@ class TranscriptionService {
 			throw new Error(`Unknown model: ${modelId}`);
 		}
 
-		this.worker = new Worker(new URL("./worker.ts", import.meta.url), {
+		/*
+		 * 固定 URL，不用 `new URL("./worker.ts", import.meta.url)`：Turbopack 会把那种
+		 * 写法当静态资源原样发出未编译的 TypeScript。worker.js 由
+		 * `bun run build:transcription` 打进 public/transcription/。
+		 */
+		this.worker = new Worker("/transcription/worker.js", {
 			type: "module",
 		});
 

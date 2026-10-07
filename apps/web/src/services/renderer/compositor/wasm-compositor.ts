@@ -12,6 +12,7 @@ import {
 	isRenderPerfEnabled,
 	recordWasmFrameProfile,
 } from "@/diagnostics/render-perf";
+import type { ElementCanvas2d } from "@/effects/types";
 import type {
 	ExternalTextureDescriptor,
 	FrameDescriptor,
@@ -28,6 +29,7 @@ type RenderedCacheEntry = {
 	kind: "rendered";
 	canvas: OffscreenCanvas;
 	contentHash: string;
+	effectKey: string | null;
 	width: number;
 	height: number;
 };
@@ -37,6 +39,12 @@ type ExternalCacheEntry = {
 	source: CanvasImageSource;
 	width: number;
 	height: number;
+	/**
+	 * 带 Canvas2D 特效的元素不能直接把解码帧交给 wasm：必须先把滤镜/叠加画进
+	 * 一块自己的画布。这块画布按纹理 id 长期复用，逐帧重画而不重新分配。
+	 */
+	effectCanvas: OffscreenCanvas | null;
+	effectKey: string | null;
 };
 
 class WasmCompositor {
@@ -98,14 +106,58 @@ class WasmCompositor {
 
 	private syncExternalTexture(texture: ExternalTextureDescriptor) {
 		const previous = this.cache.get(texture.id);
+		const effectKey = texture.canvas2d?.key ?? null;
 		if (
 			previous?.kind === "external" &&
 			previous.source === texture.source &&
 			previous.width === texture.width &&
-			previous.height === texture.height
+			previous.height === texture.height &&
+			previous.effectKey === effectKey
 		) {
 			incrementCounter({ name: "textureCacheHit" });
 			return;
+		}
+
+		let source = texture.source;
+		let effectCanvas: OffscreenCanvas | null = null;
+		if (texture.canvas2d) {
+			effectCanvas =
+				previous?.kind === "external" &&
+				previous.effectCanvas &&
+				previous.effectCanvas.width === texture.width &&
+				previous.effectCanvas.height === texture.height
+					? previous.effectCanvas
+					: new OffscreenCanvas(texture.width, texture.height);
+			const ctx = effectCanvas.getContext("2d");
+			if (!ctx) {
+				throw new Error(
+					`Failed to get 2d context for effect texture ${texture.id}`,
+				);
+			}
+			ctx.clearRect(0, 0, texture.width, texture.height);
+			paintWithCanvas2d({
+				ctx,
+				width: texture.width,
+				height: texture.height,
+				canvas2d: texture.canvas2d,
+				draw: (target) => {
+					target.drawImage(
+						texture.source,
+						0,
+						0,
+						texture.width,
+						texture.height,
+					);
+				},
+			});
+			source = effectCanvas;
+		} else {
+			source = ensureOffscreenCanvas({
+				source: texture.source,
+				width: texture.width,
+				height: texture.height,
+				label: `texture upload ${texture.id}`,
+			});
 		}
 
 		incrementCounter({ name: "textureUpload" });
@@ -115,12 +167,7 @@ class WasmCompositor {
 		});
 		uploadTexture({
 			id: texture.id,
-			source: ensureOffscreenCanvas({
-				source: texture.source,
-				width: texture.width,
-				height: texture.height,
-				label: `texture upload ${texture.id}`,
-			}),
+			source,
 			width: texture.width,
 			height: texture.height,
 		});
@@ -129,14 +176,18 @@ class WasmCompositor {
 			source: texture.source,
 			width: texture.width,
 			height: texture.height,
+			effectCanvas,
+			effectKey,
 		});
 	}
 
 	private syncRenderedTexture(texture: RenderedTextureDescriptor) {
 		const previous = this.cache.get(texture.id);
+		const effectKey = texture.canvas2d?.key ?? null;
 		if (
 			previous?.kind === "rendered" &&
 			previous.contentHash === texture.contentHash &&
+			previous.effectKey === effectKey &&
 			previous.width === texture.width &&
 			previous.height === texture.height
 		) {
@@ -159,7 +210,13 @@ class WasmCompositor {
 			throw new Error(`Failed to get 2d context for texture ${texture.id}`);
 		}
 		ctx.clearRect(0, 0, texture.width, texture.height);
-		texture.draw(ctx);
+		paintWithCanvas2d({
+			ctx,
+			width: texture.width,
+			height: texture.height,
+			canvas2d: texture.canvas2d ?? null,
+			draw: texture.draw,
+		});
 
 		incrementCounter({ name: "textureUpload" });
 		incrementCounter({
@@ -176,6 +233,7 @@ class WasmCompositor {
 			kind: "rendered",
 			canvas,
 			contentHash: texture.contentHash,
+			effectKey,
 			width: texture.width,
 			height: texture.height,
 		});
@@ -195,6 +253,36 @@ function createBackingCanvas({
 		throw new Error("OffscreenCanvas is not supported in this environment");
 	}
 	return new OffscreenCanvas(width, height);
+}
+
+/**
+ * Canvas2D 通道：先按 filter 画内容，再把叠加画在上面。叠加必须在 filter 复位之后，
+ * 否则「亮度」这类调色会把暗角、噪点一起改掉。
+ */
+function paintWithCanvas2d({
+	ctx,
+	width,
+	height,
+	canvas2d,
+	draw,
+}: {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	width: number;
+	height: number;
+	canvas2d: ElementCanvas2d | null;
+	draw: (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) => void;
+}) {
+	if (!canvas2d) {
+		draw(ctx);
+		return;
+	}
+	ctx.save();
+	if (canvas2d.filter) {
+		ctx.filter = canvas2d.filter;
+	}
+	draw(ctx);
+	ctx.restore();
+	canvas2d.paint?.({ ctx, width, height });
 }
 
 function ensureOffscreenCanvas({

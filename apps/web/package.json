@@ -5,7 +5,8 @@
   "packageManager": "bun@1.2.18",
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "bun run build:transcription && next build",
+    "build:transcription": "bun scripts/build-transcription-worker.ts",
     "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",

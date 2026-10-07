@@ -246,6 +246,7 @@ async function collectVisualSourceNode({
 		source,
 		width: sourceWidth,
 		height: sourceHeight,
+		canvas2d: node.resolved.canvas2d,
 	});
 
 	const transform = computeVisualTransform({
@@ -312,6 +313,7 @@ function collectTextNode({
 		draw: (ctx) => {
 			renderTextToContext({ node, ctx });
 		},
+		canvas2d: node.resolved.canvas2d,
 	});
 	items.push({
 		type: "layer",

@@ -28,6 +28,14 @@ export function resolveEffectPasses({
 	}));
 }
 
+export function isCanvas2dEffect({
+	definition,
+}: {
+	definition: EffectDefinition;
+}): boolean {
+	return Boolean(definition.renderer.canvas2d);
+}
+
 export const EFFECT_TARGET_ELEMENT_TYPES = VISUAL_ELEMENT_TYPES;
 
 export function buildDefaultEffectInstance({

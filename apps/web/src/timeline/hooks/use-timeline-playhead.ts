@@ -95,6 +95,8 @@ export function useTimelinePlayhead({
 
 	return {
 		handlePlayheadMouseDown: ctrl.onPlayheadMouseDown,
+		handlePlayheadTouchStart: ctrl.onPlayheadTouchStart,
 		handleRulerMouseDown: ctrl.onRulerMouseDown,
+		handleRulerTouchStart: ctrl.onRulerTouchStart,
 	};
 }

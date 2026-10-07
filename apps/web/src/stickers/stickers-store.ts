@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import {
 	browseAll,
 	browseCategory,
+	CATEGORY_PAGE_SIZE,
 	searchAll,
 	searchStickers as searchStickersFromProviders,
 } from "@/stickers";
@@ -68,11 +69,13 @@ interface StickersStore {
 	recentStickers: string[];
 	isSearching: boolean;
 	isBrowsing: boolean;
+	isLoadingMore: boolean;
 
 	setSearchQuery: ({ query }: { query: string }) => void;
 	setSelectedCategory: ({ category }: { category: StickerCategory }) => void;
 	searchStickers: ({ query }: { query: string }) => Promise<void>;
 	browseStickers: () => Promise<void>;
+	loadMoreSection: ({ sectionId }: { sectionId: string }) => Promise<void>;
 	addToRecentStickers: ({ stickerId }: { stickerId: string }) => void;
 	clearRecentStickers: () => void;
 }
@@ -90,6 +93,7 @@ export const useStickersStore = create<StickersStore>()(
 
 			isSearching: false,
 			isBrowsing: false,
+			isLoadingMore: false,
 
 			setSearchQuery: ({ query }) => set({ searchQuery: query }),
 
@@ -168,6 +172,53 @@ export const useStickersStore = create<StickersStore>()(
 				if (version === browseRequestVersion) {
 					set({ isBrowsing: false });
 				}
+			}
+		},
+
+		/*
+		 * 分类页签里的「加载更多」。以前那颗按钮写的是「查看全部」，做的事却是
+		 * setSelectedCategory(当前分类) —— 值没变，React 不重渲染，所以在「推特表情」
+		 * 这类页签里点了没反应（在「全部」里能反应，是因为那里要切的分类和当前不同）。
+		 * 一页只有 CATEGORY_PAGE_SIZE 张，剩下的必须靠这里翻出来。
+		 */
+		loadMoreSection: async ({ sectionId }: { sectionId: string }) => {
+			const state = get();
+			if (state.isLoadingMore) return;
+
+			const category = state.selectedCategory;
+			if (category === "all") return;
+
+			const content = state.browseContent;
+			const section = content?.sections.find((s) => s.id === sectionId);
+			if (!content || !section || !section.hasMore) return;
+
+			const page = Math.floor(section.items.length / CATEGORY_PAGE_SIZE) + 1;
+
+			set({ isLoadingMore: true });
+			try {
+				const next = await browseCategory({ category, page });
+				const incoming = next.sections.find((s) => s.id === sectionId);
+				if (!incoming) return;
+
+				const seen = new Set(section.items.map((item) => item.id));
+				const merged = [
+					...section.items,
+					...incoming.items.filter((item) => !seen.has(item.id)),
+				];
+
+				set({
+					browseContent: {
+						sections: content.sections.map((s) =>
+							s.id === sectionId
+								? { ...s, items: merged, hasMore: incoming.hasMore }
+								: s,
+						),
+					},
+				});
+			} catch (error) {
+				console.error("Load more stickers failed:", error);
+			} finally {
+				set({ isLoadingMore: false });
 			}
 		},
 

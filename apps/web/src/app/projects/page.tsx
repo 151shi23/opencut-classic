@@ -512,7 +512,7 @@ function NewProjectButton() {
 		const projectId = await editor.project.createNewProject({
 			name: "New project",
 		});
-		router.push(`/editor/${projectId}`);
+		router.push(`/editor/new?id=${projectId}`);
 	};
 
 	return (
@@ -664,7 +664,7 @@ function ProjectItem({
 				className="size-5 shrink-0"
 			/>
 
-			<Link href={`/editor/${project.id}`} className="flex-1 min-w-0">
+			<Link href={`/editor/new?id=${project.id}`} className="flex-1 min-w-0">
 				{listRowContent}
 			</Link>
 
@@ -686,10 +686,10 @@ function ProjectItem({
 		<>
 			<ContextMenu>
 				<ContextMenuTrigger asChild>
-					<div className="group relative">
+					<div data-mw-project-card className="group relative">
 						{isGridView ? (
 							<>
-								<Link href={`/editor/${project.id}`} className="block">
+								<Link href={`/editor/new?id=${project.id}`} className="block">
 									{gridContent}
 								</Link>
 
@@ -870,11 +870,13 @@ function ProjectMenu({
 					variant="background"
 					className={
 						isGrid
-							? `absolute z-10 top-3 right-3 ${isOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`
+							? // 触屏没有 hover，菜单键必须常驻可见（原来靠 group-hover 显形）
+								"absolute z-10 top-3 right-3 opacity-100"
 							: "!bg-transparent !shadow-none"
 					}
 					size="icon"
 					aria-label="Project menu"
+					data-mw-project-menu=""
 					onClick={(event) =>
 						handleMenuClick({
 							event: event as unknown as MouseEvent<HTMLButtonElement>,
@@ -958,7 +960,7 @@ function EmptyState() {
 			const projectId = await editor.project.createNewProject({
 				name: "New project",
 			});
-			router.push(`/editor/${projectId}`);
+			router.push(`/editor/new?id=${projectId}`);
 		} catch (error) {
 			toast.error("Failed to create project", {
 				description:

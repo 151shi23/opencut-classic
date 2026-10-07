@@ -35,6 +35,11 @@ function usePreviewSize() {
 	};
 }
 
+/** 一帧迟迟不 settle 就当作挂死，放行渲染循环，避免预览永久停在黑屏上。 */
+const STUCK_FRAME_TIMEOUT_MS = 3_000;
+/** 失败帧的退避重试间隔：既能让临时失败自愈，又不会逐帧空转。 */
+const RENDER_RETRY_DELAY_MS = 400;
+
 function normalizeWheelDelta({
 	delta,
 	deltaMode,
@@ -142,6 +147,9 @@ function PreviewCanvas({
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
 	const renderingRef = useRef(false);
+	const renderTokenRef = useRef(0);
+	const renderStartedAtRef = useRef(0);
+	const retryAfterRef = useRef(0);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -170,20 +178,49 @@ function PreviewCanvas({
 	useEffect(() => {
 		const mount = canvasMountRef.current;
 		if (!mount) return;
-		const outputCanvas = renderer.getOutputCanvas();
-		outputCanvas.style.display = "block";
-		outputCanvas.style.width = "100%";
-		outputCanvas.style.height = "100%";
-		mount.appendChild(outputCanvas);
+
+		// 合成器在显存紧张 / 尺寸变化时会抛错。这里抛出去会让整个编辑页崩掉，
+		// 所以退后重试，把画布挂上去才是正解。
+		let disposed = false;
+		let retryTimer: ReturnType<typeof setTimeout> | null = null;
+		let outputCanvas: HTMLCanvasElement | null = null;
+
+		const attach = () => {
+			if (disposed) return;
+			try {
+				outputCanvas = renderer.getOutputCanvas();
+			} catch {
+				retryTimer = setTimeout(attach, RENDER_RETRY_DELAY_MS);
+				return;
+			}
+			outputCanvas.style.display = "block";
+			outputCanvas.style.width = "100%";
+			outputCanvas.style.height = "100%";
+			mount.appendChild(outputCanvas);
+		};
+		attach();
+
 		return () => {
-			if (outputCanvas.parentElement === mount) {
+			disposed = true;
+			if (retryTimer !== null) clearTimeout(retryTimer);
+			if (outputCanvas && outputCanvas.parentElement === mount) {
 				mount.removeChild(outputCanvas);
 			}
 		};
 	}, [renderer]);
 
 	const render = useCallback(() => {
-		if (!renderTree || renderingRef.current) return;
+		if (!renderTree) return;
+
+		const now = performance.now();
+		if (renderingRef.current) {
+			// 看门狗：某一帧永远不返回（解码挂住、wasm 卡死）时必须放行，
+			// 否则整个预览循环停摆，画面就再也回不来了。
+			if (now - renderStartedAtRef.current < STUCK_FRAME_TIMEOUT_MS) return;
+			renderTokenRef.current += 1;
+			renderingRef.current = false;
+		}
+		if (now < retryAfterRef.current) return;
 
 		const renderTime = Math.min(
 			editor.playback.getCurrentTime(),
@@ -194,20 +231,28 @@ function PreviewCanvas({
 		);
 		const frame = Math.floor(renderTime / ticksPerFrame);
 
-		if (
-			frame === lastFrameRef.current &&
-			renderTree === lastSceneRef.current
-		) {
+		if (frame === lastFrameRef.current && renderTree === lastSceneRef.current) {
 			return;
 		}
 
 		renderingRef.current = true;
+		const token = ++renderTokenRef.current;
+		renderStartedAtRef.current = now;
 		lastSceneRef.current = renderTree;
 		lastFrameRef.current = frame;
 		renderer
 			.render({ node: renderTree, time: renderTime })
-			.then(() => {
-				renderingRef.current = false;
+			.catch(() => {
+				// 这一帧画不出来就丢掉它自己，退避后再试；绝不能用异常打断渲染循环。
+				retryAfterRef.current = performance.now() + RENDER_RETRY_DELAY_MS;
+				lastFrameRef.current = -1;
+				lastSceneRef.current = null;
+			})
+			.finally(() => {
+				if (renderTokenRef.current === token) {
+					renderingRef.current = false;
+					renderStartedAtRef.current = 0;
+				}
 			});
 	}, [renderer, renderTree, editor.playback, editor.timeline]);
 
@@ -308,20 +353,20 @@ function PreviewCanvas({
 								ref={viewportRef}
 								className="relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden"
 							>
-							<div
-								ref={canvasMountRef}
-								className="absolute block border"
-								style={{
-									left: viewport.sceneLeft,
-									top: viewport.sceneTop,
-									width: viewport.sceneWidth,
-									height: viewport.sceneHeight,
-									background:
-										activeProject.settings.background.type === "blur"
-											? "transparent"
-											: activeProject?.settings.background.color,
-								}}
-							/>
+								<div
+									ref={canvasMountRef}
+									className="absolute block border"
+									style={{
+										left: viewport.sceneLeft,
+										top: viewport.sceneTop,
+										width: viewport.sceneWidth,
+										height: viewport.sceneHeight,
+										background:
+											activeProject.settings.background.type === "blur"
+												? "transparent"
+												: activeProject?.settings.background.color,
+									}}
+								/>
 								<PreviewOverlayLayer
 									instances={overlayInstances}
 									plane="under-interaction"

@@ -1,12 +1,16 @@
 import { useEffect } from "react";
+import { isAndroidUI } from "@/android/detect";
 import { useSoundsStore } from "@/sounds/sounds-store";
+import { searchFreesoundSounds } from "@/sounds/freesound";
 
 export function useSoundSearch({
 	query,
 	commercialOnly,
+	sort,
 }: {
 	query: string;
 	commercialOnly: boolean;
+	sort: string;
 }) {
 	const {
 		searchResults,
@@ -36,85 +40,80 @@ export function useSoundSearch({
 		try {
 			setLoadingMore({ loading: true });
 			const nextPage = currentPage + 1;
-
-			const searchParams = new URLSearchParams({
-				page: nextPage.toString(),
-				type: "effects",
+			const data = await searchFreesoundSounds({
+				query,
+				sort,
+				page: nextPage,
+				commercialOnly,
 			});
 
 			if (query.trim()) {
-				searchParams.set("q", query);
-			}
-
-			searchParams.set("commercial_only", commercialOnly.toString());
-			const response = await fetch(
-				`/api/sounds/search?${searchParams.toString()}`,
-			);
-
-			if (response.ok) {
-				const data = await response.json();
-
-				if (query.trim()) {
-					appendSearchResults(data.results);
-				} else {
-					appendTopSounds(data.results);
-				}
-
-				setCurrentPage({ page: nextPage });
-				setHasNextPage({ hasNext: !!data.next });
-				setTotalCount(data.count);
+				appendSearchResults({ results: data.results });
 			} else {
-				setSearchError({ error: `Load more failed: ${response.status}` });
+				appendTopSounds({ results: data.results });
 			}
-		} catch (err) {
+
+			setCurrentPage({ page: nextPage });
+			setHasNextPage({ hasNext: data.hasNext });
+			setTotalCount({ count: data.count });
+		} catch (error) {
 			setSearchError({
-				error: err instanceof Error ? err.message : "Load more failed",
+				error: error instanceof Error ? error.message : "Load more failed",
 			});
 		} finally {
 			setLoadingMore({ loading: false });
 		}
 	};
 
+	const signature = `${sort}|${commercialOnly}|${query.trim()}`;
+	const trimmed = query.trim();
+
 	useEffect(() => {
-		if (!query.trim()) {
+		if (!trimmed) {
 			setSearchResults({ results: [] });
 			setSearchError({ error: null });
 			setLastSearchQuery({ query: "" });
 			return;
 		}
 
-		if (query === lastSearchQuery && searchResults.length > 0) {
+		// 单字搜索命中很差，还会在输入法逐字提交时白烧 60 次/分钟的配额
+		if (trimmed.length < 2) {
+			return;
+		}
+
+		// 换排序或许可证筛选时签名会变，需要重新搜索而不是命中旧结果
+		if (signature === lastSearchQuery && searchResults.length > 0) {
 			return;
 		}
 
 		let ignore = false;
 
-		const timeoutId = setTimeout(async () => {
+		// 手机端停顿多、又容易误触发，防抖放宽到 500ms
+		const timeoutId = setTimeout(
+			async () => {
 			try {
 				setSearching({ searching: true });
 				setSearchError({ error: null });
 				resetPagination();
 
-				const response = await fetch(
-					`/api/sounds/search?q=${encodeURIComponent(query)}&type=effects&page=1`,
-				);
+				const data = await searchFreesoundSounds({
+					query,
+					sort,
+					page: 1,
+					commercialOnly,
+				});
 
 				if (!ignore) {
-					if (response.ok) {
-						const data = await response.json();
-						setSearchResults({ results: data.results });
-						setLastSearchQuery({ query: query });
-						setHasNextPage({ hasNext: !!data.next });
-						setTotalCount({ count: data.count });
-						setCurrentPage({ page: 1 });
-					} else {
-						setSearchError({ error: `Search failed: ${response.status}` });
-					}
+					setSearchResults({ results: data.results });
+					setLastSearchQuery({ query: signature });
+					setHasNextPage({ hasNext: data.hasNext });
+					setTotalCount({ count: data.count });
+					setCurrentPage({ page: 1 });
 				}
-			} catch (err) {
+			} catch (error) {
 				if (!ignore) {
 					setSearchError({
-						error: err instanceof Error ? err.message : "Search failed",
+						error: error instanceof Error ? error.message : "Search failed",
 					});
 				}
 			} finally {
@@ -122,7 +121,9 @@ export function useSoundSearch({
 					setSearching({ searching: false });
 				}
 			}
-		}, 300);
+			},
+			isAndroidUI() ? 500 : 300,
+		);
 
 		return () => {
 			clearTimeout(timeoutId);
@@ -130,6 +131,10 @@ export function useSoundSearch({
 		};
 	}, [
 		query,
+		trimmed,
+		signature,
+		sort,
+		commercialOnly,
 		lastSearchQuery,
 		searchResults.length,
 		setSearchResults,

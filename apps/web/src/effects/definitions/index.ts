@@ -1,7 +1,15 @@
 import { effectsRegistry } from "../registry";
 import { blurEffectDefinition } from "./blur";
+import { colorAdjustEffects } from "./color-adjust";
+import { colorLookEffects } from "./color-looks";
+import { overlayEffects } from "./overlays";
 
-const defaultEffects = [blurEffectDefinition];
+const defaultEffects = [
+	blurEffectDefinition,
+	...colorAdjustEffects,
+	...colorLookEffects,
+	...overlayEffects,
+];
 
 export function registerDefaultEffects(): void {
 	for (const definition of defaultEffects) {
@@ -14,3 +22,5 @@ export function registerDefaultEffects(): void {
 		});
 	}
 }
+
+export { colorAdjustEffects, colorLookEffects, overlayEffects };

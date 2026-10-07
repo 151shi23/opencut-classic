@@ -2,6 +2,8 @@ import { Feed } from "feed";
 import { getPosts } from "@/blog/query";
 import { SITE_INFO, SITE_URL } from "@/site/brand";
 
+export const dynamic = "force-static";
+
 export async function GET() {
 	try {
 		const { posts } = await getPosts();

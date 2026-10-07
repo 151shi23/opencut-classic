@@ -121,20 +121,21 @@ async function loadLegacyTracksForScene({
 	const sceneDbName = `video-editor-timelines-${projectId}-${sceneId}`;
 	const projectDbName = `video-editor-timelines-${projectId}`;
 
-	const adapter = new IndexedDBAdapter<LegacyTimelineData>(
-		sceneDbName,
-		"timeline",
-		1,
-	);
+	// 安卓移植补丁：与 runner.ts 相同，改为对象参数签名
+	const adapter = new IndexedDBAdapter<LegacyTimelineData>({
+		dbName: sceneDbName,
+		storeName: "timeline",
+		version: 1,
+	});
 
 	let data = await adapter.get("timeline");
 
 	if (!data && isMain) {
-		const projectAdapter = new IndexedDBAdapter<LegacyTimelineData>(
-			projectDbName,
-			"timeline",
-			1,
-		);
+		const projectAdapter = new IndexedDBAdapter<LegacyTimelineData>({
+			dbName: projectDbName,
+			storeName: "timeline",
+			version: 1,
+		});
 		data = await projectAdapter.get("timeline");
 	}
 
@@ -157,11 +158,11 @@ async function loadMediaTypesById({
 		return {};
 	}
 
-	const mediaMetadataAdapter = new IndexedDBAdapter<MediaAssetData>(
-		`video-editor-media-${projectId}`,
-		"media-metadata",
-		1,
-	);
+	const mediaMetadataAdapter = new IndexedDBAdapter<MediaAssetData>({
+		dbName: `video-editor-media-${projectId}`,
+		storeName: "media-metadata",
+		version: 1,
+	});
 
 	const mediaEntries = await Promise.all(
 		mediaIds.map(async (mediaId) => {

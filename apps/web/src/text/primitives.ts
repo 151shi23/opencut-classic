@@ -144,6 +144,8 @@ export function drawMeasuredTextLayout({
 	textColor,
 	background,
 	backgroundColor,
+	stroke,
+	shadow,
 	textBaseline = "middle",
 }: {
 	ctx: TextCanvasContext;
@@ -151,6 +153,13 @@ export function drawMeasuredTextLayout({
 	textColor: string;
 	background?: ResolvedTextBackgroundLike | null;
 	backgroundColor?: string;
+	stroke?: { color: string; width: number } | null;
+	shadow?: {
+		color: string;
+		blur: number;
+		offsetX: number;
+		offsetY: number;
+	} | null;
 	textBaseline?: CanvasTextBaseline;
 }): void {
 	ctx.font = layout.fontString;
@@ -197,8 +206,37 @@ export function drawMeasuredTextLayout({
 		}
 	}
 
+	// 安卓移植新增：阴影在填充时生效（描边也带阴影会显脏，只让填充层投影）；
+	// 描边先画、填充后画，边缘才干净（剪映同款画法）。
+	if (shadow) {
+		ctx.shadowColor = shadow.color;
+		ctx.shadowBlur = shadow.blur;
+		ctx.shadowOffsetX = shadow.offsetX;
+		ctx.shadowOffsetY = shadow.offsetY;
+	}
+
 	for (let index = 0; index < layout.lines.length; index++) {
 		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
+		if (stroke && stroke.width > 0) {
+			// 描边层不带阴影（阴影只在填充层，否则叠两层发脏）
+			if (shadow) {
+				ctx.shadowColor = "transparent";
+				ctx.shadowBlur = 0;
+				ctx.shadowOffsetX = 0;
+				ctx.shadowOffsetY = 0;
+			}
+			ctx.strokeStyle = stroke.color;
+			ctx.lineWidth = stroke.width;
+			ctx.lineJoin = "round";
+			ctx.lineCap = "round";
+			ctx.strokeText(layout.lines[index], 0, lineY);
+			if (shadow) {
+				ctx.shadowColor = shadow.color;
+				ctx.shadowBlur = shadow.blur;
+				ctx.shadowOffsetX = shadow.offsetX;
+				ctx.shadowOffsetY = shadow.offsetY;
+			}
+		}
 		ctx.fillText(layout.lines[index], 0, lineY);
 		drawTextDecoration({
 			ctx,
@@ -209,6 +247,13 @@ export function drawMeasuredTextLayout({
 			scaledFontSize: layout.scaledFontSize,
 			textAlign: layout.textAlign,
 		});
+	}
+
+	if (shadow) {
+		ctx.shadowColor = "transparent";
+		ctx.shadowBlur = 0;
+		ctx.shadowOffsetX = 0;
+		ctx.shadowOffsetY = 0;
 	}
 }
 

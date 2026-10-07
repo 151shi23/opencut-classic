@@ -26,3 +26,5 @@ target/
 .cargo-tools/
 
 rust-migration-notes.md
+# 本地构建日志
+*.log

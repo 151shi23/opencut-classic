@@ -32,6 +32,28 @@ export function isKey(value: string): value is Key {
 	return KEY_SET.has(value);
 }
 
+const MODIFIER_KEYS: ReadonlySet<string> = new Set<string>([
+	"ctrl",
+	"alt",
+	"shift",
+	"ctrl+shift",
+	"alt+shift",
+	"ctrl+alt",
+	"ctrl+alt+shift",
+]);
+
+/** 安卓移植补丁：classic 快照里 persistence.ts 引用了这个守卫但上游没导出，补上。 */
+export function isShortcutKey(value: string): value is ShortcutKey {
+	if (isKey(value)) {
+		return true;
+	}
+	const plus = value.indexOf("+");
+	if (plus <= 0) {
+		return false;
+	}
+	return MODIFIER_KEYS.has(value.slice(0, plus)) && isKey(value.slice(plus + 1));
+}
+
 export type ModifierBasedShortcutKey = `${ModifierKeys}+${Key}`;
 // Singular keybindings (these will be disabled when an input-ish area has been focused)
 export type SingleCharacterShortcutKey = `${Key}`;

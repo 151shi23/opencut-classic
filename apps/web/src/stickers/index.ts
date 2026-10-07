@@ -206,10 +206,18 @@ export async function searchAll({
 	return { sections };
 }
 
+/**
+ * 单个分类页签每页多少张。必须和 store 的 loadMoreSection 用同一个数，
+ * 否则「加载更多」会跳页或漏项。
+ */
+export const CATEGORY_PAGE_SIZE = 60;
+
 export async function browseCategory({
 	category,
+	page = 1,
 }: {
 	category: StickerCategory;
+	page?: number;
 }): Promise<StickerBrowseResult> {
 	registerDefaultStickerProviders({});
 
@@ -223,7 +231,7 @@ export async function browseCategory({
 		return getEmptyBrowseResult();
 	}
 
-	return provider.browse({ options: {} });
+	return provider.browse({ options: { page, limit: CATEGORY_PAGE_SIZE } });
 }
 
 export async function browseAll({

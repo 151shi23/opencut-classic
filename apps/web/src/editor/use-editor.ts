@@ -38,6 +38,8 @@ export function useEditor<T>(
 				editor.selection.subscribe(onChange),
 				editor.clipboard.subscribe(onChange),
 				editor.diagnostics.subscribe(onChange),
+				// 撤销/恢复只动历史栈，不动轨道 —— 不订阅它，按钮的置灰状态不会跟着刷新
+				editor.command.subscribeHistory(onChange),
 			];
 			return () => {
 				unsubscribers.forEach((unsubscribe) => {

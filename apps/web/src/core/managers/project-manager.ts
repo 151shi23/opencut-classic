@@ -76,7 +76,14 @@ export class ProjectManager {
 			});
 		})();
 
-		await this.storageMigrationPromise;
+		try {
+			await this.storageMigrationPromise;
+		} catch (error) {
+			// 缓存一个 rejected promise 会让之后每一次加载都直接失败 ——
+			// 一条坏记录就能把整个工程列表永久毒化。失败就丢掉缓存，允许重试。
+			this.storageMigrationPromise = null;
+			throw error;
+		}
 	}
 
 	async createNewProject({ name }: { name: string }): Promise<string> {
@@ -189,24 +196,22 @@ export class ProjectManager {
 	async saveCurrentProject(): Promise<void> {
 		if (!this.active) return;
 
-		try {
-			const scenes = this.editor.scenes.getScenes();
-			const updatedProject = {
-				...this.active,
-				scenes,
-				metadata: {
-					...this.active.metadata,
-					duration: getProjectDurationFromScenes({ scenes }),
-					updatedAt: new Date(),
-				},
-			};
+		const scenes = this.editor.scenes.getScenes();
+		const updatedProject = {
+			...this.active,
+			scenes,
+			metadata: {
+				...this.active.metadata,
+				duration: getProjectDurationFromScenes({ scenes }),
+				updatedAt: new Date(),
+			},
+		};
 
-			await storageService.saveProject({ project: updatedProject });
-			this.active = updatedProject;
-			this.updateMetadata(updatedProject);
-		} catch (error) {
-			console.error("Failed to save project:", error);
-		}
+		// 不在这儿吞异常：SaveManager 要靠它决定"脏标记不清 + 退避重试 + 提示用户"。
+		// 以前这里一句 console.error 就把失败变成静默成功，改动就这么丢了。
+		await storageService.saveProject({ project: updatedProject });
+		this.active = updatedProject;
+		this.updateMetadata(updatedProject);
 	}
 
 	async export({ options }: { options: ExportOptions }): Promise<ExportResult> {
@@ -308,6 +313,9 @@ export class ProjectManager {
 	}
 
 	closeProject(): void {
+		// 清场景会经订阅回调把上一个工程的脏状态留下，不丢掉的话
+		// 下一次保存会把旧时间轴写进刚打开的新工程
+		this.editor.save.discardPending();
 		this.active = null;
 		this.notify();
 
