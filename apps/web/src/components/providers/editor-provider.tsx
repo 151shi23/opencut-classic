@@ -12,6 +12,7 @@ import { useKeybindingsStore } from "@/actions/keybindings-store";
 import { useTimelineStore } from "@/timeline/timeline-store";
 import { useEditorActions } from "@/actions/use-editor-actions";
 import { loadFontAtlas } from "@/fonts/google-fonts";
+import { ensureCustomFontsRegistered } from "@/fonts/use-custom-fonts";
 import {
 	initializeGpuRenderer,
 	isGpuAvailable,
@@ -48,6 +49,8 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 
 				setIsLoading(false);
 				loadFontAtlas();
+				// 导入的字体必须赶在第一次文字排版前挂上，否则工程里的文字会回退
+				void ensureCustomFontsRegistered();
 			} catch (err) {
 				if (cancelled) return;
 
