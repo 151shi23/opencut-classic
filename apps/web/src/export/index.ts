@@ -98,5 +98,10 @@ export function downloadBuffer({
 	document.body.appendChild(downloadLink);
 	downloadLink.click();
 	document.body.removeChild(downloadLink);
-	URL.revokeObjectURL(url);
+	/*
+	 * 不能点完立刻 revoke：WebView 里下载是异步起手的，链接一失效就表现为
+	 * "文件下下来了但只有前几 MB"。留 60 秒足够大文件交给下载管理器，
+	 * 又不会真的把 blob 永久挂在内存里。
+	 */
+	setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

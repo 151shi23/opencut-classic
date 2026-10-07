@@ -514,6 +514,13 @@ export const ZH_EXACT: Record<string, string> = {
 	"Model not initialized": "识别模型还没加载好",
 	"Chinese only": "仅中文",
 
+	// ---- 工程打不开时的错误屏（以前是个没有出路的死屏）----
+	// 安心话并进这一条而不是另起一个 <p>：实测错误屏上那个独立的静态 <p> 不会被
+	// 扫描器走到（同块的 {error} 和按钮都能翻），短句留在同一节点里才必然显示中文。
+	"This project's data is damaged and cannot be opened":
+		"这个工程的数据已损坏，打不开。没有删除任何东西，你的其他工程都还在。",
+	"Back to projects": "返回工程列表",
+
 	// ---- 贴纸：六套内置包的分页名（键必须与 stickers/categories.ts 的值一致）----
 	Twemoji: "推特表情",
 	"Fluent Flat": "扁平表情",

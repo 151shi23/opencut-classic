@@ -1,7 +1,12 @@
 import type { TProject, TProjectMetadata } from "@/project/types";
 import { getProjectDurationFromScenes } from "@/timeline/scenes";
 import type { MediaAsset } from "@/media/types";
-import { IndexedDBAdapter } from "./indexeddb-adapter";
+import {
+	IndexedDBAdapter,
+	deleteDatabase,
+	listDatabaseNames,
+} from "./indexeddb-adapter";
+import { MalformedProjectError, isMalformedProjectError } from "./errors";
 import { OPFSAdapter } from "./opfs-adapter";
 import {
 	type StorageCapacityCheckResult,
@@ -87,7 +92,14 @@ class StorageService {
 		this.migrationsPromise = runStorageMigrations({ migrations }).then(
 			() => undefined,
 		);
-		await this.migrationsPromise;
+
+		try {
+			await this.migrationsPromise;
+		} catch (error) {
+			// 缓存一个 rejected promise 会让之后每一次读写都直接失败
+			this.migrationsPromise = null;
+			throw error;
+		}
 	}
 
 	private getProjectMediaAdapters({ projectId }: { projectId: string }) {
@@ -183,11 +195,12 @@ class StorageService {
 			typeof serializedProject.metadata !== "object" ||
 			serializedProject.metadata === null
 		) {
-			console.warn(
-				"[storage] Skipping malformed project entry (missing metadata):",
-				{ id, entry: serializedProject },
-			);
-			return null;
+			console.error("[storage] Malformed project entry (missing metadata):", {
+				id,
+				entry: serializedProject,
+			});
+			// 不能回 null：那会被上层当成"工程不存在"，进而静默新建一个同名空工程
+			throw new MalformedProjectError(id);
 		}
 
 		const scenes =
@@ -229,9 +242,16 @@ class StorageService {
 		const projects: TProject[] = [];
 
 		for (const id of projectIds) {
-			const result = await this.loadProject({ id });
-			if (result?.project) {
-				projects.push(result.project);
+			// 单个工程损坏不能连累整批：loadProject 现在会抛 MalformedProjectError，
+			// 直接 await 会让"列出所有工程"因为一条坏记录整体失败
+			try {
+				const result = await this.loadProject({ id });
+				if (result?.project) {
+					projects.push(result.project);
+				}
+			} catch (error) {
+				if (!isMalformedProjectError(error)) throw error;
+				console.warn("[storage] Skipping damaged project in batch load:", id);
 			}
 		}
 
@@ -282,6 +302,28 @@ class StorageService {
 
 	async deleteProject({ id }: { id: string }): Promise<void> {
 		await this.projectsAdapter.remove(id);
+		// 原来只删工程记录，注释却写着"媒体随工程删除清理"——两句都不成立：
+		// 每工程的媒体库和 OPFS 素材目录会永久残留，手机上就是越用越满
+		await this.dropProjectStorage({ projectId: id });
+	}
+
+	/** 删掉某个工程留下的媒体库 + 素材目录（含历史孤儿）。 */
+	private async dropProjectStorage({ projectId }: { projectId: string }): Promise<void> {
+		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+			this.getProjectMediaAdapters({ projectId });
+
+		await Promise.all([
+			mediaMetadataAdapter.deleteDatabase().catch((error) => {
+				console.error(`Failed to drop media db of ${projectId}:`, error);
+			}),
+			mediaAssetsAdapter.clear()
+				.then(() =>
+					OPFSAdapter.removeDirectory(`media-files-${projectId}`),
+				)
+				.catch((error) => {
+					console.error(`Failed to drop media dir of ${projectId}:`, error);
+				}),
+		]);
 	}
 
 	async saveMediaAsset({
@@ -434,8 +476,35 @@ class StorageService {
 	}
 
 	async clearAllData(): Promise<void> {
+		const projectIds = await this.projectsAdapter.list().catch(() => []);
 		await this.projectsAdapter.clear();
-		// project-specific media and timelines cleaned up when projects are deleted
+
+		// 先按已知工程清一遍，再按前缀扫孤儿：老版本从来没删过工程级媒体，
+		// 只清"当前还列得出的工程"会把历史残留永远留在手机里
+		for (const id of projectIds) {
+			await this.dropProjectStorage({ projectId: id });
+		}
+
+		const orphanDatabases = await listDatabaseNames({
+			prefix: `${this.config.mediaDb}-`,
+		});
+		for (const dbName of orphanDatabases) {
+			await deleteDatabase({ dbName }).catch((error) =>
+				console.error(`Failed to drop orphan db ${dbName}:`, error),
+			);
+		}
+
+		const orphanDirectories = await OPFSAdapter.listDirectoryNames({
+			prefix: "media-files-",
+		});
+		for (const directoryName of orphanDirectories) {
+			await OPFSAdapter.removeDirectory(directoryName).catch((error) =>
+				console.error(
+					`Failed to drop orphan dir ${directoryName}:`,
+					error,
+				),
+			);
+		}
 	}
 
 	async getStorageInfo(): Promise<{

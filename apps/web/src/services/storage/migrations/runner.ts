@@ -63,6 +63,21 @@ export async function runStorageMigrations({
 			continue;
 		}
 
+		/*
+		 * 只有"看起来像个工程"才进迁移流程。以前没有任何形状检查，一条只剩 id 的
+		 * 坏记录会被 getProjectVersion 认成 v0，迁移器一路给它补出 metadata、
+		 * scenes、settings —— 于是"工程损坏"被静默改写成"工程变空了"，
+		 * 用户以为剪映把内容吞了，实际上我们替它伪造了一份新数据。
+		 */
+		if (!looksLikeProject({ project: projectRecord })) {
+			console.error(
+				"[migrations] Skipping record that is not a project (no version, metadata, scenes or name):",
+				projectId,
+			);
+			failedProjectIds.push(projectId);
+			continue;
+		}
+
 		let currentVersion = getProjectVersion({ project: projectRecord });
 		const targetVersion = orderedMigrations.at(-1)?.to ?? currentVersion;
 
@@ -139,6 +154,19 @@ export async function runStorageMigrations({
 	}
 
 	return { migratedCount };
+}
+
+/**
+ * 一条记录值不值得当工程来迁移：至少要有版本号、scenes、metadata 或 v0 的顶层 name。
+ * 一个都没有的（只剩 id 的坏记录、别的模块误写进同一个 store 的数据）不是工程，
+ * 迁移器也不该给它凭空补出一份 —— 补出来就等于把"损坏"洗成了"空工程"。
+ */
+export function looksLikeProject({ project }: { project: ProjectRecord }): boolean {
+	if (typeof project.version === "number") return true;
+	if (Array.isArray(project.scenes)) return true;
+	if (isRecord(project.metadata)) return true;
+	if (typeof project.name === "string") return true;
+	return false;
 }
 
 function getProjectVersion({ project }: { project: ProjectRecord }): number {

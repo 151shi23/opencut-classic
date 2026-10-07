@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { isMalformedProjectError } from "@/services/storage/errors";
 import { EditorCore } from "@/core";
 import { useEditor } from "@/editor/use-editor";
 import { useKeybindingsListener } from "@/actions/use-keybindings";
@@ -49,6 +51,17 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 			} catch (err) {
 				if (cancelled) return;
 
+				/*
+				 * 损坏必须排在"不存在"前面判：两者以前都走 null → "not found"，
+				 * 于是打开一个坏工程会静默新建一个同名空工程，原数据还在库里，
+				 * 用户看到的却是"工程被删了"。这里宁可停在错误屏也不顶替。
+				 */
+				if (isMalformedProjectError(err)) {
+					setError("This project's data is damaged and cannot be opened");
+					setIsLoading(false);
+					return;
+				}
+
 				const isNotFound =
 					err instanceof Error &&
 					(err.message.includes("not found") ||
@@ -91,8 +104,16 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 	if (error) {
 		return (
 			<div className="bg-background flex h-screen w-screen items-center justify-center">
-				<div className="flex flex-col items-center gap-4">
+				<div className="flex flex-col items-center gap-4 px-6 text-center">
 					<p className="text-destructive text-sm">{error}</p>
+					{/* 以前这块是个死屏：手机上除了杀掉 App 没有第二条出路 */}
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => router.push("/projects")}
+					>
+						Back to projects
+					</Button>
 				</div>
 			</div>
 		);
