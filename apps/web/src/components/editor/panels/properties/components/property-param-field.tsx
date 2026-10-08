@@ -139,10 +139,10 @@ function ParamInput({
 
 	if (param.type === "text") {
 		return (
-			<Textarea
+			<TextParamField
 				value={String(value)}
-				onChange={(event) => onPreview(event.currentTarget.value)}
-				onBlur={onCommit}
+				onPreview={onPreview}
+				onCommit={onCommit}
 			/>
 		);
 	}
@@ -162,6 +162,40 @@ function ParamInput({
 	}
 
 	return null;
+}
+
+function TextParamField({
+	value,
+	onPreview,
+	onCommit,
+}: {
+	value: string;
+	onPreview: (value: string) => void;
+	onCommit: () => void;
+}) {
+	/*
+	 * 这里必须走草稿态。以前是直接 `value={String(value)}` 的受控写法，而每敲一个字
+	 * 都会 previewElements 一次、它自己 notify 一次，面板跟着重渲染，于是输入框被重画
+	 * 成"已提交"的旧值：中文输入法的合成被打断，看上去就是"字打不进去、打进去又被
+	 * 吞回原来那串英文"，而画面（读预览轨道）是对的。数字框早就用 usePropertyDraft
+	 * 躲了这个坑，文本框漏了。
+	 */
+	const draft = usePropertyDraft<string>({
+		displayValue: value,
+		parse: (input) => input,
+		onPreview,
+		onCommit,
+		supportsExpressions: false,
+	});
+
+	return (
+		<Textarea
+			value={draft.displayValue}
+			onFocus={draft.onFocus}
+			onChange={draft.onChange}
+			onBlur={draft.onBlur}
+		/>
+	);
 }
 
 function NumberParamField({
