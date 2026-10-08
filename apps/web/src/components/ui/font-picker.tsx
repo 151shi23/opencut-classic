@@ -28,6 +28,12 @@ import {
 	SUPPORTED_FONT_SUFFIXES,
 } from "@/fonts/custom-fonts";
 import { useCustomFonts } from "@/fonts/use-custom-fonts";
+import {
+	downloadOnlineFont,
+	isOnlineFontStoreAvailable,
+	listOnlineFonts,
+	type OnlineFont,
+} from "@/fonts/online-fonts";
 import { cn } from "@/utils/ui";
 import { ChevronDown, Loader2, Search } from "lucide-react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -37,9 +43,17 @@ import { toast } from "sonner";
 const FONT_TABS = [
 	{ key: "all", label: "All fonts" },
 	{ key: "my-fonts", label: "My fonts" },
+	// 在线字体要原生层代发（接口是 HMAC 签名的），桌面预览没有这座桥就不给这个页签
+	{ key: "online", label: "Online fonts" },
 ] as const;
 
 type FontTab = (typeof FONT_TABS)[number]["key"];
+
+function formatSize(bytes: number): string {
+	if (!bytes || bytes < 0) return "-";
+	if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const ROW_HEIGHT = 40;
 const PREVIEW_SCALE = 0.8;
@@ -70,6 +84,68 @@ export function FontPicker({
 	const { fonts: customFonts, refresh: refreshCustomFonts } = useCustomFonts({
 		open,
 	});
+
+	const onlineSupported = useMemo(() => isOnlineFontStoreAvailable(), []);
+	const visibleTabs = useMemo(
+		() => FONT_TABS.filter((tab) => tab.key !== "online" || onlineSupported),
+		[onlineSupported],
+	);
+
+	const [onlineFonts, setOnlineFonts] = useState<OnlineFont[]>([]);
+	const [onlineStatus, setOnlineStatus] = useState<
+		"idle" | "loading" | "ready" | "error"
+	>("idle");
+	const [onlineError, setOnlineError] = useState("");
+	const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
+
+	const loadOnlineFonts = useCallback(async () => {
+		setOnlineStatus("loading");
+		setOnlineError("");
+		try {
+			setOnlineFonts(await listOnlineFonts());
+			setOnlineStatus("ready");
+		} catch (error) {
+			setOnlineError(error instanceof Error ? error.message : String(error));
+			setOnlineStatus("error");
+		}
+	}, []);
+
+	// 只在切到那个页签时拉一次清单：每次打开选择器都去签名请求一遍没意义
+	useEffect(() => {
+		if (!open || activeTab !== "online") return;
+		if (onlineStatus === "loading" || onlineStatus === "ready") return;
+		void loadOnlineFonts();
+	}, [activeTab, loadOnlineFonts, onlineStatus, open]);
+
+	const importedFileNames = useMemo(
+		() => new Set(customFonts.map((font) => font.fileName)),
+		[customFonts],
+	);
+
+	const handleOnlineDownload = useCallback(
+		async (font: OnlineFont) => {
+			setDownloadingSlug(font.slug);
+			try {
+				const file = await downloadOnlineFont({ slug: font.slug });
+				await importCustomFont({ file });
+				await refreshCustomFonts();
+				toast.success("Font downloaded");
+			} catch (error) {
+				toast.error(
+					font.name,
+					{
+						description:
+							error instanceof Error
+								? error.message
+								: "The font could not be downloaded",
+					},
+				);
+			} finally {
+				setDownloadingSlug(null);
+			}
+		},
+		[refreshCustomFonts],
+	);
 
 	const customFamilies = useMemo(
 		() => new Set(customFonts.map((font) => font.family)),
@@ -158,7 +234,7 @@ export function FontPicker({
 	}, [open]);
 
 	const activeTabLabel =
-		FONT_TABS.find((t) => t.key === activeTab)?.label.toLowerCase() ?? "";
+		visibleTabs.find((t) => t.key === activeTab)?.label.toLowerCase() ?? "";
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -204,7 +280,7 @@ export function FontPicker({
 					/>
 				</div>
 				<div className="flex border-b px-3">
-					{FONT_TABS.map((tab) => (
+					{visibleTabs.map((tab) => (
 						<button
 							key={tab.key}
 							type="button"
@@ -236,6 +312,7 @@ export function FontPicker({
 					</div>
 				)}
 				{status === "idle" &&
+					activeTab !== "online" &&
 					fontNames.length > 0 &&
 					filteredFonts.length === 0 && (
 						<div className="py-6 text-center text-sm text-muted-foreground">
@@ -244,23 +321,88 @@ export function FontPicker({
 								: "No fonts found."}
 						</div>
 					)}
-				{status === "idle" && atlas && filteredFonts.length > 0 && (
-					<List
-						rowCount={filteredFonts.length}
-						rowHeight={ROW_HEIGHT}
-						overscanCount={OVERSCAN}
-						rowComponent={FontRow}
-						rowProps={{
-							atlas,
-							filteredFonts,
-							selectedFont: defaultValue,
-							customFonts,
-							customFamilies,
-							onFontSelect: handleSelect,
-							onFontDelete: handleDeleteFont,
-						}}
-						style={{ height: listHeight, width: LIST_WIDTH }}
-					/>
+				{status === "idle" &&
+					activeTab !== "online" &&
+					atlas &&
+					filteredFonts.length > 0 && (
+						<List
+							rowCount={filteredFonts.length}
+							rowHeight={ROW_HEIGHT}
+							overscanCount={OVERSCAN}
+							rowComponent={FontRow}
+							rowProps={{
+								atlas,
+								filteredFonts,
+								selectedFont: defaultValue,
+								customFonts,
+								customFamilies,
+								onFontSelect: handleSelect,
+								onFontDelete: handleDeleteFont,
+							}}
+							style={{ height: listHeight, width: LIST_WIDTH }}
+						/>
+					)}
+				{activeTab === "online" && (
+					<div className="scrollbar-hidden max-h-72 overflow-y-auto py-1">
+						{onlineStatus === "loading" && (
+							<p className="text-muted-foreground px-3 py-6 text-center text-xs">
+								Loading fonts...
+							</p>
+						)}
+						{onlineStatus === "error" && (
+							<div className="flex flex-col items-center gap-2 px-4 py-6">
+								<p className="text-muted-foreground text-center text-xs">
+									{onlineError || "The font service is unavailable"}
+								</p>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => void loadOnlineFonts()}
+								>
+									Retry
+								</Button>
+							</div>
+						)}
+						{onlineStatus === "ready" && onlineFonts.length === 0 && (
+							<p className="text-muted-foreground px-3 py-6 text-center text-xs">
+								No online fonts.
+							</p>
+						)}
+						{onlineFonts.map((font) => {
+							const imported = importedFileNames.has(font.fileName);
+							return (
+								<div
+									key={font.slug}
+									className="flex items-center gap-2 px-3 py-1.5"
+								>
+									<div className="min-w-0 flex-1">
+										<p className="truncate text-xs">{font.name}</p>
+										<p className="text-muted-foreground truncate text-[10px]">
+											{formatSize(font.sizeBytes)} · {font.fileName}
+										</p>
+									</div>
+									{imported ? (
+										<span className="text-muted-foreground shrink-0 text-[10px]">
+											Downloaded
+										</span>
+									) : (
+										<Button
+											variant="outline"
+											size="sm"
+											className="shrink-0"
+											disabled={downloadingSlug !== null}
+											onClick={() => void handleOnlineDownload(font)}
+										>
+											{downloadingSlug === font.slug ? (
+												<Loader2 className="size-3.5 animate-spin" />
+											) : null}
+											Download
+										</Button>
+									)}
+								</div>
+							);
+						})}
+					</div>
 				)}
 				<div className="border-border flex items-center justify-between gap-2 border-t px-3 py-2">
 					<Button

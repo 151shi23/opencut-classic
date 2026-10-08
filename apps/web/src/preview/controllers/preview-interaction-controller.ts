@@ -21,6 +21,7 @@ import type { TCanvasSize } from "@/project/types";
 import type { ParamValues } from "@/params";
 import { buildTransformFromParams, type Transform } from "@/rendering";
 import { isVisualElement } from "@/timeline/element-utils";
+import { findLiveTextElement } from "@/preview/live-text-element";
 import type {
 	ElementRef,
 	SceneTracks,
@@ -259,7 +260,22 @@ export class PreviewInteractionController {
 	}
 
 	get editingText(): EditingTextState | null {
-		return this.editingTextState;
+		const state = this.editingTextState;
+		if (!state) return null;
+
+		/*
+		 * 每次都回活元素，而不是双击那一刻抓的快照。
+		 * 以前这里回的是快照：之后只要有一次外部重渲染（在属性面板里换一个字体
+		 * 就是一次），overlay 就按那份快照把 contentEditable 的文字重写回去，
+		 * 参数也停在旧值上 —— 手机上表现为"改完字体就打不进字、打的字被吞回去"。
+		 */
+		const tracks = this.deps.scene.getTracks();
+		const live = findLiveTextElement({
+			tracks,
+			elementId: state.elementId,
+		});
+		if (!live) return state;
+		return { ...state, element: live };
 	}
 
 	subscribe({ listener }: { listener: () => void }): () => void {

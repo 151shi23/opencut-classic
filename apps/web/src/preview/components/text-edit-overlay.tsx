@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { usePreviewViewport } from "@/preview/components/preview-viewport";
 import { useEditor } from "@/editor/use-editor";
 import type { TextElement } from "@/timeline";
@@ -30,17 +30,26 @@ export function TextEditOverlay({
 	const editor = useEditor();
 	const viewport = usePreviewViewport();
 	const divRef = useRef<HTMLDivElement>(null);
+	// 只在第一次渲染时取一次，之后这段文字完全由 DOM 持有（见下面的 useLayoutEffect）
+	const firstContent = useRef(element.params.content);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const div = divRef.current;
 		if (!div) return;
+		/*
+		 * 以前这段文字是 React 的 children（{textContent}），于是任何一次重渲染都会
+		 * 按"渲染时那一刻的元素文字"重写 contentEditable —— 手指正在拼音合成时被重写
+		 * 一下，Android 输入法的 composing 就断了，表现就是"改完字体再也打不进字"。
+		 * 现在只在挂载时灌一次，之后的文字归 DOM 自己管。
+		 */
+		div.innerText = String(firstContent.current ?? "");
 		div.focus();
 		const range = document.createRange();
 		range.selectNodeContents(div);
 		const selection = window.getSelection();
 		selection?.removeAllRanges();
 		selection?.addRange(range);
-	}, []);
+	}, [firstContent]);
 
 	const handleInput = useCallback(() => {
 		const div = divRef.current;
@@ -148,9 +157,7 @@ export function TextEditOverlay({
 				onInput={handleInput}
 				onBlur={onCommit}
 				onKeyDown={(event) => handleKeyDown({ event })}
-			>
-				{textParams.content}
-			</div>
+			/>
 		</div>
 	);
 }
