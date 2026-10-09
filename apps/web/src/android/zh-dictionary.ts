@@ -443,6 +443,8 @@ export const ZH_EXACT: Record<string, string> = {
 	// ---- 在线字体（走原生层的签名通道向软件资源服务要清单和直链）----
 	"Online fonts": "在线字体",
 	Downloaded: "已下载",
+	"Activate first": "需先激活",
+	Refresh: "刷新",
 	"Font downloaded": "字体已下载",
 	"No online fonts.": "在线字体列表是空的。",
 	"The font service is unavailable": "字体服务暂时连不上",

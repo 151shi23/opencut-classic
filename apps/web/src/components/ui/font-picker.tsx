@@ -85,7 +85,12 @@ export function FontPicker({
 		open,
 	});
 
-	const onlineSupported = useMemo(() => isOnlineFontStoreAvailable(), []);
+	// 每次打开弹层重新判断：原生桥是在文档初始化时挂上的，但页面自己的挂载时机
+	// 比它晚不了多少，一次性 useMemo 会把它锁死在首屏那一刻的判定上
+	const [onlineSupported, setOnlineSupported] = useState(false);
+	useEffect(() => {
+		if (open) setOnlineSupported(isOnlineFontStoreAvailable());
+	}, [open]);
 	const visibleTabs = useMemo(
 		() => FONT_TABS.filter((tab) => tab.key !== "online" || onlineSupported),
 		[onlineSupported],
@@ -344,6 +349,22 @@ export function FontPicker({
 					)}
 				{activeTab === "online" && (
 					<div className="scrollbar-hidden max-h-72 overflow-y-auto py-1">
+						{/* 资源是陆续上架的（文档说 35 个字体），清单没有刷新入口就等于"第一次打开看到几条就永远是几条"。
+						    限流是 30 次/分钟，所以只在点的时候拉，不做自动轮询。 */}
+						<div className="flex items-center justify-end gap-2 px-3 pb-1">
+							<Button
+								variant="ghost"
+								size="sm"
+								className="h-6 px-2 text-[10px]"
+								disabled={onlineStatus === "loading"}
+								onClick={() => void loadOnlineFonts()}
+							>
+								{onlineStatus === "loading" ? (
+									<Loader2 className="size-3 animate-spin" />
+								) : null}
+								Refresh
+							</Button>
+						</div>
 						{onlineStatus === "loading" && (
 							<p className="text-muted-foreground px-3 py-6 text-center text-xs">
 								Loading fonts...
@@ -378,10 +399,17 @@ export function FontPicker({
 									<div className="min-w-0 flex-1">
 										<p className="truncate text-xs">{font.name}</p>
 										<p className="text-muted-foreground truncate text-[10px]">
-											{formatSize(font.sizeBytes)} · {font.fileName}
+											{formatSize(font.sizeBytes)} · {font.versionName || "-"} ·{" "}
+											{font.fileName}
 										</p>
 									</div>
-									{imported ? (
+									{/* 文档 §6.4：require_feature 非空 = 要先激活对应功能才能下载，
+									    服务端阶段二才强校验，现阶段由这边挡；宁可不给入口 */}
+									{font.requireFeature ? (
+										<span className="text-muted-foreground shrink-0 text-[10px]">
+											Activate first
+										</span>
+									) : imported ? (
 										<span className="text-muted-foreground shrink-0 text-[10px]">
 											Downloaded
 										</span>

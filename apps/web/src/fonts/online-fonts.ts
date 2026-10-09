@@ -16,6 +16,12 @@ export interface OnlineFont {
 	fileName: string;
 	versionName: string;
 	sizeBytes: number;
+	/**
+	 * 非空 = 这个资源要先激活对应功能才允许下载。服务端阶段二才会强校验
+	 * （架构文档 §6.4），现阶段按文档要求由 App 端自己挡，我这里宁可不给入口
+	 * 也不要让用户下下来才发现用不了。
+	 */
+	requireFeature: string | null;
 }
 
 type Bridge = {
@@ -76,11 +82,35 @@ function callNative(
 	});
 }
 
+/**
+ * 服务端错误码 → 中文。文档 §6 那张表里的码不能直接甩给用户：
+ * `TIMESTAMP_EXPIRED`（手机时钟偏差 >5 分钟）这类只有说清"改哪里"才有用。
+ */
+const ZH_BY_CODE: Record<string, string> = {
+	MISSING_SIGNATURE: "请求头不完整，这台设备的签名配置有问题",
+	INVALID_APP_ID: "应用标识不对，请联系开发者核对",
+	TIMESTAMP_EXPIRED: "手机时间与标准时间差太多（超过 5 分钟），请先开启「自动设置时间」",
+	INVALID_NONCE: "请求校验串异常，请重试一次",
+	REPLAY_DETECTED: "这个请求已经用过了，请重新点一次",
+	SIGNATURE_MISMATCH: "签名校验不通过，请联系开发者",
+	APP_DISABLED: "这个应用版本已被停用",
+	RATE_LIMITED: "请求太频繁，请等一会儿再试",
+	INVALID_SLUG: "字体标识不合法",
+	NOT_FOUND: "这个字体已经下架了",
+	RESOURCE_DISABLED: "这个字体已经下架了",
+	VERSION_NOT_FOUND: "这个字体版本已经归档，换最新的那个下",
+	SERVER_ERROR: "服务端出错了，稍后再试",
+};
+
 function serverError(payload: Record<string, unknown>): string {
+	const code = typeof payload.code === "string" ? payload.code : "";
+	const mapped = code ? ZH_BY_CODE[code] : undefined;
+	if (mapped) return mapped;
+
 	const error = payload.error ?? payload.message;
 	return typeof error === "string" && error.trim().length > 0
 		? error
-		: "The font service refused the request";
+		: "字体服务拒绝了这次请求";
 }
 
 export async function listOnlineFonts(): Promise<OnlineFont[]> {
@@ -122,6 +152,11 @@ export async function listOnlineFonts(): Promise<OnlineFont[]> {
 				typeof latest.file_size_bytes === "number"
 					? latest.file_size_bytes
 					: 0,
+			requireFeature:
+				typeof resource.require_feature === "string" &&
+				resource.require_feature.length > 0
+					? resource.require_feature
+					: null,
 		});
 	}
 
