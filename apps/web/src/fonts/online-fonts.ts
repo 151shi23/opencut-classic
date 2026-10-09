@@ -16,6 +16,8 @@ export interface OnlineFont {
 	fileName: string;
 	versionName: string;
 	sizeBytes: number;
+	/** 服务端给的字节指纹，页面导入前会再核一次 */
+	sha256: string;
 	/**
 	 * 非空 = 这个资源要先激活对应功能才允许下载。服务端阶段二才会强校验
 	 * （架构文档 §6.4），现阶段按文档要求由 App 端自己挡，我这里宁可不给入口
@@ -152,6 +154,10 @@ export async function listOnlineFonts(): Promise<OnlineFont[]> {
 				typeof latest.file_size_bytes === "number"
 					? latest.file_size_bytes
 					: 0,
+			sha256:
+				typeof latest.file_sha256 === "string"
+					? latest.file_sha256.toLowerCase()
+					: "",
 			requireFeature:
 				typeof resource.require_feature === "string" &&
 				resource.require_feature.length > 0

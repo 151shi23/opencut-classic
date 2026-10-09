@@ -437,6 +437,8 @@ export const ZH_EXACT: Record<string, string> = {
 	"This font file is too large": "字体文件太大",
 	"Could not read a font name from this file": "没法从文件名认出字体名",
 	"This font is already imported": "这个字体已经导入过了",
+	"The font file does not match its checksum": "字体文件校验值对不上，没有采用",
+	"This font name is reserved by the system": "这个字体名被系统占用了，换一个文件",
 	"This font file could not be loaded": "字体文件读不出来，可能已损坏",
 	"Font file is missing from storage": "字体文件在存储里不见了",
 

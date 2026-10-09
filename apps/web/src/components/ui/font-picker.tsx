@@ -122,8 +122,11 @@ export function FontPicker({
 		void loadOnlineFonts();
 	}, [activeTab, loadOnlineFonts, onlineStatus, open]);
 
-	const importedFileNames = useMemo(
-		() => new Set(customFonts.map((font) => font.fileName)),
+	const importedSigs = useMemo(
+		() =>
+			new Set(
+				customFonts.map((font) => (font.sha256 || font.fileName).toLowerCase()),
+			),
 		[customFonts],
 	);
 
@@ -132,7 +135,10 @@ export function FontPicker({
 			setDownloadingSlug(font.slug);
 			try {
 				const file = await downloadOnlineFont({ slug: font.slug });
-				await importCustomFont({ file });
+				await importCustomFont({
+					file,
+					expectedSha256: font.sha256 || undefined,
+				});
 				await refreshCustomFonts();
 				toast.success("Font downloaded");
 			} catch (error) {
@@ -389,8 +395,13 @@ export function FontPicker({
 								No online fonts.
 							</p>
 						)}
+						{/* 判"下过了"要看 sha256，不看文件名：同一个 slug 会滚版本
+							（见过 v9→v33、连字身都换了而文件名可能不变），按文件名判就
+							会永远显示已下载，用户拿不到新版本 */}
 						{onlineFonts.map((font) => {
-							const imported = importedFileNames.has(font.fileName);
+							const imported = importedSigs.has(
+								(font.sha256 || font.fileName).toLowerCase(),
+							);
 							return (
 								<div
 									key={font.slug}

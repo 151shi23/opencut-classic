@@ -9,6 +9,12 @@ export interface CustomFont {
 	fileName: string;
 	size: number;
 	addedAt: string;
+	/**
+	 * 字节指纹。资源服务是**同一个 slug 滚版本**的（re-zt→zt、v9→v33 都见过），
+	 * 只按文件名判断"下过了"会出两种错：同名换新字身 → 永远显示已下载；
+	 * 想更新又被"已经导入过了"挡住。所以更新与否必须看 sha256。
+	 */
+	sha256?: string;
 }
 
 /**
@@ -79,6 +85,18 @@ export function isCustomFontFamily({ family }: { family: string }): boolean {
 	return loadedFaces.has(family);
 }
 
+/** crypto.subtle 要 secure context，WebViewAssetLoader 挂的 https 域满足 */
+export async function sha256Hex({
+	buffer,
+}: {
+	buffer: ArrayBuffer;
+}): Promise<string> {
+	const digest = await crypto.subtle.digest("SHA-256", buffer);
+	return [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, "0"))
+		.join("");
+}
+
 async function registerFace({ record }: { record: CustomFont }): Promise<void> {
 	const existing = loadedFaces.get(record.family);
 	if (existing) {
@@ -126,8 +144,10 @@ export async function registerAllCustomFonts(): Promise<CustomFont[]> {
 
 export async function importCustomFont({
 	file,
+	expectedSha256,
 }: {
 	file: File;
+	expectedSha256?: string;
 }): Promise<CustomFont> {
 	const fileName = file.name || "font";
 	if (!isSupportedFontFile({ fileName })) {
@@ -152,11 +172,19 @@ export async function importCustomFont({
 		throw new CustomFontError("Could not read a font name from this file");
 	}
 
-	const existing = await listCustomFonts();
-	if (
-		SYSTEM_FONTS.has(family) ||
-		existing.some((record) => record.family === family)
-	) {
+	const sha256 = await sha256Hex({ buffer });
+	if (expectedSha256 && sha256 !== expectedSha256.toLowerCase()) {
+		// 原生层已经校验过一次，这里是第二道：字节从私有目录交到页面这段也可能坏
+		throw new CustomFontError("The font file does not match its checksum");
+	}
+
+	const sameFamily = (await listCustomFonts()).find(
+		(record) => record.family === family,
+	);
+	if (SYSTEM_FONTS.has(family)) {
+		throw new CustomFontError("This font name is reserved by the system");
+	}
+	if (sameFamily && sameFamily.sha256 === sha256) {
 		throw new CustomFontError("This font is already imported");
 	}
 
@@ -166,7 +194,14 @@ export async function importCustomFont({
 		fileName,
 		size: buffer.byteLength,
 		addedAt: new Date().toISOString(),
+		sha256,
 	};
+
+	// 同名不同字节 = 同一个 slug 滚了版本：先把旧的删掉再写新的，
+	// 不然库里会留两条同族字体，谁生效看注册顺序，那就是玄学了
+	if (sameFamily) {
+		await deleteCustomFont({ id: sameFamily.id });
+	}
 
 	// 先写字节再写索引，注册失败就把两边都退回去：
 	// 留下"记录在、文件不在"或"文件在、记录不在"都会变成下次启动的鬼条目
