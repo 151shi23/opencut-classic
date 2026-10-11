@@ -29,10 +29,12 @@ import {
 } from "@/fonts/custom-fonts";
 import { useCustomFonts } from "@/fonts/use-custom-fonts";
 import {
-	downloadOnlineFont,
+	downloadOnlinePackFile,
 	isOnlineFontStoreAvailable,
-	listOnlineFonts,
-	type OnlineFont,
+	listOnlineFontPacks,
+	listOnlinePackFiles,
+	type OnlineFontFile,
+	type OnlineFontPack,
 } from "@/fonts/online-fonts";
 import { cn } from "@/utils/ui";
 import { ChevronDown, Loader2, Search } from "lucide-react";
@@ -96,19 +98,30 @@ export function FontPicker({
 		[onlineSupported],
 	);
 
-	const [onlineFonts, setOnlineFonts] = useState<OnlineFont[]>([]);
+	const [onlinePacks, setOnlinePacks] = useState<OnlineFontPack[]>([]);
 	const [onlineStatus, setOnlineStatus] = useState<
 		"idle" | "loading" | "ready" | "error"
 	>("idle");
 	const [onlineError, setOnlineError] = useState("");
-	const [downloadingSlug, setDownloadingSlug] = useState<string | null>(null);
+	/** 展开中的包 slug（服务端 v3：一个标识是一个包，包内多个文件，进去才拉文件清单） */
+	const [openPack, setOpenPack] = useState<string | null>(null);
+	const [packFiles, setPackFiles] = useState<Record<string, OnlineFontFile[]>>({});
+	const [packStatus, setPackStatus] = useState<
+		Record<string, "loading" | "ready" | "error">
+	>({});
+	const [packError, setPackError] = useState<Record<string, string>>({});
+	const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
 
-	const loadOnlineFonts = useCallback(async () => {
+	const loadOnlinePacks = useCallback(async () => {
 		setOnlineStatus("loading");
 		setOnlineError("");
 		try {
-			setOnlineFonts(await listOnlineFonts());
+			setOnlinePacks(await listOnlineFontPacks());
 			setOnlineStatus("ready");
+			// 包内容可能已换，展开状态与文件清单一律作废重拉
+			setOpenPack(null);
+			setPackFiles({});
+			setPackStatus({});
 		} catch (error) {
 			setOnlineError(error instanceof Error ? error.message : String(error));
 			setOnlineStatus("error");
@@ -119,8 +132,25 @@ export function FontPicker({
 	useEffect(() => {
 		if (!open || activeTab !== "online") return;
 		if (onlineStatus === "loading" || onlineStatus === "ready") return;
-		void loadOnlineFonts();
-	}, [activeTab, loadOnlineFonts, onlineStatus, open]);
+		void loadOnlinePacks();
+	}, [activeTab, loadOnlinePacks, onlineStatus, open]);
+
+	const expandPack = useCallback(async (slug: string) => {
+		setOpenPack(slug);
+		if (packStatus[slug]) return;
+		setPackStatus((prev) => ({ ...prev, [slug]: "loading" }));
+		try {
+			const files = await listOnlinePackFiles({ slug });
+			setPackFiles((prev) => ({ ...prev, [slug]: files }));
+			setPackStatus((prev) => ({ ...prev, [slug]: "ready" }));
+		} catch (error) {
+			setPackError((prev) => ({
+				...prev,
+				[slug]: error instanceof Error ? error.message : String(error),
+			}));
+			setPackStatus((prev) => ({ ...prev, [slug]: "error" }));
+		}
+	}, [packStatus]);
 
 	const importedSigs = useMemo(
 		() =>
@@ -131,28 +161,34 @@ export function FontPicker({
 	);
 
 	const handleOnlineDownload = useCallback(
-		async (font: OnlineFont) => {
-			setDownloadingSlug(font.slug);
+		async (pack: OnlineFontPack, file: OnlineFontFile) => {
+			const key = `${pack.slug}#${file.seq}`;
+			setDownloadingKey(key);
 			try {
-				const file = await downloadOnlineFont({ slug: font.slug });
+				const downloaded = await downloadOnlinePackFile({
+					slug: pack.slug,
+					seq: file.seq,
+					sha256: file.sha256,
+				});
 				await importCustomFont({
-					file,
-					expectedSha256: font.sha256 || undefined,
+					file: downloaded.file,
+					expectedSha256: file.sha256 || undefined,
 				});
 				await refreshCustomFonts();
-				toast.success("Font downloaded");
+				toast.success(downloaded.file.name, {
+					description: downloaded.skipped
+						? "本地已有同样字节，没重下，直接入库"
+						: "已下载并导入",
+				});
 			} catch (error) {
-				toast.error(
-					font.name,
-					{
-						description:
-							error instanceof Error
-								? error.message
-								: "The font could not be downloaded",
-					},
-				);
+				toast.error(file.fileName, {
+					description:
+						error instanceof Error
+							? error.message
+							: "The font could not be downloaded",
+				});
 			} finally {
-				setDownloadingSlug(null);
+				setDownloadingKey(null);
 			}
 		},
 		[refreshCustomFonts],
@@ -355,15 +391,33 @@ export function FontPicker({
 					)}
 				{activeTab === "online" && (
 					<div className="scrollbar-hidden max-h-72 overflow-y-auto py-1">
-						{/* 资源是陆续上架的（文档说 35 个字体），清单没有刷新入口就等于"第一次打开看到几条就永远是几条"。
-						    限流是 30 次/分钟，所以只在点的时候拉，不做自动轮询。 */}
-						<div className="flex items-center justify-end gap-2 px-3 pb-1">
+						{/*
+							两级列表：服务端 v3 是文件包模型（一个标识 = 一个包，线上那个包里
+							有 33 个字体、82MB），所以先看包、点开才拉文件清单，绝不做
+							"点一下就整包拉下来"。资源是陆续上架的，限流 30 次/分钟，
+							所以只在点刷新时拉，不做自动轮询。
+						*/}
+						<div className="flex items-center justify-between gap-2 px-3 pb-1">
+							{openPack ? (
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-6 px-2 text-[10px]"
+									onClick={() => setOpenPack(null)}
+								>
+									Back
+								</Button>
+							) : (
+								<span className="text-muted-foreground text-[10px]">
+									Font packs
+								</span>
+							)}
 							<Button
 								variant="ghost"
 								size="sm"
 								className="h-6 px-2 text-[10px]"
 								disabled={onlineStatus === "loading"}
-								onClick={() => void loadOnlineFonts()}
+								onClick={() => void loadOnlinePacks()}
 							>
 								{onlineStatus === "loading" ? (
 									<Loader2 className="size-3 animate-spin" />
@@ -384,63 +438,71 @@ export function FontPicker({
 								<Button
 									variant="outline"
 									size="sm"
-									onClick={() => void loadOnlineFonts()}
+									onClick={() => void loadOnlinePacks()}
 								>
 									Retry
 								</Button>
 							</div>
 						)}
-						{onlineStatus === "ready" && onlineFonts.length === 0 && (
+						{onlineStatus === "ready" && onlinePacks.length === 0 && (
 							<p className="text-muted-foreground px-3 py-6 text-center text-xs">
 								No online fonts.
 							</p>
 						)}
-						{/* 判"下过了"要看 sha256，不看文件名：同一个 slug 会滚版本
-							（见过 v9→v33、连字身都换了而文件名可能不变），按文件名判就
-							会永远显示已下载，用户拿不到新版本 */}
-						{onlineFonts.map((font) => {
-							const imported = importedSigs.has(
-								(font.sha256 || font.fileName).toLowerCase(),
-							);
-							return (
+						{onlineStatus === "ready" && !openPack && (
+							onlinePacks.map((pack) => (
 								<div
-									key={font.slug}
+									key={pack.slug}
 									className="flex items-center gap-2 px-3 py-1.5"
 								>
 									<div className="min-w-0 flex-1">
-										<p className="truncate text-xs">{font.name}</p>
+										<p className="truncate text-xs">{pack.name}</p>
 										<p className="text-muted-foreground truncate text-[10px]">
-											{formatSize(font.sizeBytes)} · {font.versionName || "-"} ·{" "}
-											{font.fileName}
+											{pack.fileCount} files · {formatSize(pack.totalSizeBytes)}
+											{pack.updatedAt ? ` · ${pack.updatedAt}` : ""}
 										</p>
 									</div>
 									{/* 文档 §6.4：require_feature 非空 = 要先激活对应功能才能下载，
 									    服务端阶段二才强校验，现阶段由这边挡；宁可不给入口 */}
-									{font.requireFeature ? (
+									{pack.requireFeature ? (
 										<span className="text-muted-foreground shrink-0 text-[10px]">
 											Activate first
-										</span>
-									) : imported ? (
-										<span className="text-muted-foreground shrink-0 text-[10px]">
-											Downloaded
 										</span>
 									) : (
 										<Button
 											variant="outline"
 											size="sm"
 											className="shrink-0"
-											disabled={downloadingSlug !== null}
-											onClick={() => void handleOnlineDownload(font)}
+											onClick={() => void expandPack(pack.slug)}
 										>
-											{downloadingSlug === font.slug ? (
-												<Loader2 className="size-3.5 animate-spin" />
-											) : null}
-											Download
+											Open
 										</Button>
 									)}
 								</div>
-							);
-						})}
+							))
+						)}
+						{openPack && (
+							<OnlinePackFiles
+								slug={openPack}
+								files={packFiles[openPack] ?? []}
+								status={packStatus[openPack] ?? "loading"}
+								error={packError[openPack] ?? ""}
+								importedSigs={importedSigs}
+								downloadingKey={downloadingKey}
+								onRetry={() => {
+									setPackStatus((prev) => {
+										const next = { ...prev };
+										delete next[openPack];
+										return next;
+									});
+									void expandPack(openPack);
+								}}
+								onDownload={(file) => {
+									const pack = onlinePacks.find((p) => p.slug === openPack);
+									if (pack) void handleOnlineDownload(pack, file);
+								}}
+							/>
+						)}
 					</div>
 				)}
 				<div className="border-border flex items-center justify-between gap-2 border-t px-3 py-2">
@@ -580,5 +642,99 @@ function FontRow({
 				</Button>
 			) : null}
 		</div>
+	);
+}
+
+type OnlinePackFilesProps = {
+	slug: string;
+	files: OnlineFontFile[];
+	status: "loading" | "ready" | "error";
+	error: string;
+	importedSigs: Set<string>;
+	downloadingKey: string | null;
+	onRetry: () => void;
+	onDownload: (file: OnlineFontFile) => void;
+};
+
+/**
+ * 包内文件列表。
+ *
+ * 判"这个文件下过了"只看 sha256：包里同名文件重传就是换内容（服务端 §3.2 保留序号、
+ * 换校验值），按文件名判会永远显示已下载，用户拿不到新字身。
+ */
+function OnlinePackFiles({
+	slug,
+	files,
+	status,
+	error,
+	importedSigs,
+	downloadingKey,
+	onRetry,
+	onDownload,
+}: OnlinePackFilesProps) {
+	if (status === "loading") {
+		return (
+			<p className="text-muted-foreground px-3 py-6 text-center text-xs">
+				Loading files...
+			</p>
+		);
+	}
+	if (status === "error") {
+		return (
+			<div className="flex flex-col items-center gap-2 px-4 py-6">
+				<p className="text-muted-foreground text-center text-xs">
+					{error || "This font pack could not be read"}
+				</p>
+				<Button variant="outline" size="sm" onClick={onRetry}>
+					Retry
+				</Button>
+			</div>
+		);
+	}
+	if (files.length === 0) {
+		return (
+			<p className="text-muted-foreground px-3 py-6 text-center text-xs">
+				No published files in this pack.
+			</p>
+		);
+	}
+	return (
+		<>
+			{files.map((file) => {
+				const key = `${slug}#${file.seq}`;
+				const imported = importedSigs.has(
+					(file.sha256 || file.fileName).toLowerCase(),
+				);
+				return (
+					<div key={key} className="flex items-center gap-2 px-3 py-1.5">
+						<div className="min-w-0 flex-1">
+							<p className="truncate text-xs">{file.fileName}</p>
+							<p className="text-muted-foreground truncate text-[10px]">
+								{formatSize(file.sizeBytes)} · {file.versionName} ·{" "}
+								{file.sha256 ? `${file.sha256.slice(0, 8)}…` : "-"}
+							</p>
+						</div>
+						{imported ? (
+							<span className="text-muted-foreground shrink-0 text-[10px]">
+								Downloaded
+							</span>
+						) : (
+							<Button
+								variant="outline"
+								size="sm"
+								className="shrink-0"
+								disabled={downloadingKey !== null}
+								onClick={() => onDownload(file)}
+							>
+								{downloadingKey === key ? (
+									<Loader2 className="size-3.5 animate-spin" />
+								) : null}
+								Download
+							</Button>
+						)}
+					</div>
+				);
+			})}
+		</>
 	);
 }
