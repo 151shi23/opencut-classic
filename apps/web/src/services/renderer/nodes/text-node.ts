@@ -38,6 +38,12 @@ export interface ResolvedTextNodeState {
 	textColor: string;
 	/** 渐变填充的下端色；null = 单色填充 */
 	textColorEnd: string | null;
+	/** 可选的渐变中间色 */
+	textColorMid: string | null;
+	/** 渐变方向（CSS 角度约定，180 = 上→下） */
+	gradientAngle: number;
+	/** 立体挤出（3D 字）；null = 不挤出 */
+	extrude: { color: string; width: number } | null;
 	backgroundColor: string;
 	stroke: ResolvedTextStroke | null;
 	shadow: ResolvedTextShadow | null;
@@ -76,6 +82,9 @@ export function renderTextToContext({
 		layout: resolved.measuredText,
 		textColor: resolved.textColor,
 		textColorEnd: resolved.textColorEnd,
+		textColorMid: resolved.textColorMid,
+		gradientAngle: resolved.gradientAngle,
+		extrude: resolved.extrude,
 		background: resolved.measuredText.resolvedBackground,
 		backgroundColor: resolved.backgroundColor,
 		stroke: resolved.stroke,

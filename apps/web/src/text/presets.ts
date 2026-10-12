@@ -6,6 +6,8 @@ import type { ParamValues } from "@/params";
  *
  * params 的键就是 `params/registry.ts` 里那批文字参数，直接覆盖在
  * `DEFAULTS.text.element.params` 之上，所以这里不需要重复写默认值。
+ * label 别超过 20 个字符：卡片名字超长会先被截断成 "Blue and white p...ain"，
+ * 汉化层是按整句查表的，截断之后就再也对不上了。
  * fontSize 是"画布高 / 90"的倍数（见 text/primitives.ts 的 scaledFontSize），
  * 15 ≈ 1080p 上 180px 高，所以标题/花字类给到 22~26。
  *
@@ -247,6 +249,264 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			...glow("#FF9A3C", 16),
 		},
 	},
+
+	// ---- 中国传统色：配色有出处，不是随手调的荧光 ----
+	{
+		// 王希孟《千里江山图》的石青石绿：山脚的深、山脊的亮
+		key: "qianli",
+		label: "Thousand Li Rivers",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			letterSpacing: 2,
+			color: "#9FE0D0",
+			colorMid: "#2E7C9B",
+			colorEnd: "#16324F",
+			gradientAngle: 180,
+			"stroke.enabled": true,
+			"stroke.color": "#0B1E33",
+			"stroke.width": 2,
+			"stroke.outerColor": "#9FE0D0",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		// 青花：白瓷底走到钴料蓝，斜向才像笔锋扫过
+		key: "qinghua",
+		label: "Blue-white porcelain",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 22,
+			fontWeight: "bold",
+			color: "#FFFFFF",
+			colorEnd: "#1B4E9C",
+			gradientAngle: 145,
+			"stroke.enabled": true,
+			"stroke.color": "#143C78",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FFFFFF",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		// 朱砂 + 宫墙红，节庆和标题都能压得住
+		key: "zhusha",
+		label: "Vermilion palace",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#FFC9A3",
+			colorMid: "#E1483F",
+			colorEnd: "#8E1D1D",
+			gradientAngle: 180,
+			"stroke.enabled": true,
+			"stroke.color": "#4A0F0F",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FFD9A0",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		// 鎏金：亮金→赤金→暗金三段，配硬投影才不像塑料
+		key: "liujin",
+		label: "Gilt gold",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 26,
+			fontWeight: "bold",
+			color: "#FFF6C9",
+			colorMid: "#E8B923",
+			colorEnd: "#8C5A00",
+			gradientAngle: 165,
+			"stroke.enabled": true,
+			"stroke.color": "#5A3200",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FFE9A8",
+			"stroke.outerWidth": 3,
+			"shadow.enabled": true,
+			"shadow.color": "#2A1B00",
+			"shadow.blur": 10,
+			"shadow.offsetY": 6,
+		},
+	},
+	{
+		// 水墨：不描边、字距放宽，靠灰阶和留白
+		key: "shuimo",
+		label: "Ink wash",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 20,
+			color: "#2B2B2B",
+			colorEnd: "#9A9A9A",
+			gradientAngle: 180,
+			letterSpacing: 8,
+			lineHeight: 1.5,
+		},
+	},
+	{
+		// 敦煌壁画的石绿叠土红底
+		key: "dunhuang",
+		label: "Dunhuang mural",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#F3D9A4",
+			colorMid: "#7FA98B",
+			colorEnd: "#2F6B57",
+			gradientAngle: 135,
+			"stroke.enabled": true,
+			"stroke.color": "#8C4A2B",
+			"stroke.width": 2,
+			"stroke.outerColor": "#F3D9A4",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		// 唐三彩的黄、褐、绿三釉并置
+		key: "sancai",
+		label: "Tang three-color",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#F2C14E",
+			colorMid: "#C84B31",
+			colorEnd: "#3F7D5B",
+			gradientAngle: 120,
+			"stroke.enabled": true,
+			"stroke.color": "#3A2413",
+			"stroke.width": 2,
+			"stroke.outerColor": "#F7E7C8",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		// 龙泉粉青：釉面那种由内透出来的润
+		key: "longquan",
+		label: "Celadon glaze",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 22,
+			color: "#E8F7F0",
+			colorEnd: "#6FB6A0",
+			gradientAngle: 200,
+			"stroke.enabled": true,
+			"stroke.color": "#2E6B5A",
+			"stroke.width": 2,
+			"stroke.outerColor": "#E8F7F0",
+			"stroke.outerWidth": 2,
+			...glow("#9FE8D2", 14),
+		},
+	},
+
+	// ---- 立体（挤出）与场景款 ----
+	{
+		key: "popwhite",
+		label: "White 3D",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 26,
+			fontWeight: "bold",
+			color: "#FFFFFF",
+			"stroke.enabled": true,
+			"stroke.color": "#1E6FFF",
+			"stroke.width": 2,
+			"extrude.color": "#1E6FFF",
+			"extrude.width": 16,
+		},
+	},
+	{
+		key: "blackgold3d",
+		label: "Black gold 3D",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 26,
+			fontWeight: "bold",
+			color: "#FFE9A8",
+			colorEnd: "#C79A2E",
+			"stroke.enabled": true,
+			"stroke.color": "#1B1200",
+			"stroke.width": 2,
+			"extrude.color": "#1B1200",
+			"extrude.width": 18,
+		},
+	},
+	{
+		key: "candy3d",
+		label: "Candy 3D",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#FFE1EF",
+			colorEnd: "#FF6FA5",
+			"stroke.enabled": true,
+			"stroke.color": "#FFFFFF",
+			"stroke.width": 3,
+			"extrude.color": "#B03A63",
+			"extrude.width": 14,
+		},
+	},
+	{
+		key: "dawn",
+		label: "First light",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#FFF1C9",
+			colorMid: "#FF9A3C",
+			colorEnd: "#C93756",
+			gradientAngle: 200,
+			"stroke.enabled": true,
+			"stroke.color": "#6E1F2F",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FFE29A",
+			"stroke.outerWidth": 3,
+		},
+	},
+	{
+		key: "deepsea",
+		label: "Deep sea",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#BFF3FF",
+			colorMid: "#2E86C1",
+			colorEnd: "#0B2545",
+			gradientAngle: 180,
+			"stroke.enabled": true,
+			"stroke.color": "#04101F",
+			"stroke.width": 2,
+			"stroke.outerColor": "#29B6F6",
+			"stroke.outerWidth": 2,
+			...glow("#29B6F6", 20),
+		},
+	},
+	{
+		key: "cyber",
+		label: "Cyber violet",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			letterSpacing: 2,
+			color: "#F0C1FF",
+			colorMid: "#A55EEA",
+			colorEnd: "#2E0F5B",
+			gradientAngle: 115,
+			"stroke.enabled": true,
+			"stroke.color": "#12002B",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FF3FD0",
+			"stroke.outerWidth": 3,
+			...glow("#FF3FD0", 22),
+		},
+	},
 ] as const;
 
 /**
@@ -277,9 +537,18 @@ export function buildPresetPreviewStyle({
 	};
 
 	const gradientEnd = stringParam("colorEnd", "");
+	const gradientMid = stringParam("colorMid", "");
+	const angle = numberParam("gradientAngle", 180);
 	if (gradientEnd && gradientEnd !== style.color) {
-		// 和渲染侧一样：从上到下的竖向渐变，用 background-clip 裁到字上
-		style.backgroundImage = `linear-gradient(180deg, ${style.color}, ${gradientEnd})`;
+		// 和渲染侧同一套约定：CSS 角度，0=下往上、90=左往右、180=上往下
+		const stops = [
+			style.color,
+			...(gradientMid && gradientMid !== style.color && gradientMid !== gradientEnd
+				? [gradientMid]
+				: []),
+			gradientEnd,
+		].join(", ");
+		style.backgroundImage = `linear-gradient(${angle}deg, ${stops})`;
 		style.backgroundClip = "text";
 		style.WebkitBackgroundClip = "text";
 		style.WebkitTextFillColor = "transparent";
@@ -296,15 +565,29 @@ export function buildPresetPreviewStyle({
 			outer > 0 ? stringParam("stroke.outerColor", "#000000") : stringParam("stroke.color", "#000000")
 		}`;
 	}
+	const shadows: string[] = [];
+	const extrudeDepth = numberParam("extrude.width", 0);
+	if (extrudeDepth > 0) {
+		// 渲染侧是逐层副本，卡片用三层硬阴影示意同一个方向
+		const step = Math.max(0.5, extrudeDepth * 0.05);
+		const color = stringParam("extrude.color", "#000000");
+		for (let i = 1; i <= 3; i++) {
+			shadows.push(
+				`${(step * i).toFixed(1)}px ${(step * i).toFixed(1)}px 0 ${color}`,
+			);
+		}
+	}
 	if (flagParam("shadow.enabled")) {
 		const offsetY = numberParam("shadow.offsetY", 0);
 		const offsetX = numberParam("shadow.offsetX", 0);
-		style.textShadow = `${(offsetX * 0.12).toFixed(1)}px ${(
-			offsetY * 0.12
-		).toFixed(1)}px ${(numberParam("shadow.blur", 8) * 0.12).toFixed(1)}px ${stringParam(
-			"shadow.color",
-			"#000000",
-		)}`;
+		shadows.push(
+			`${(offsetX * 0.12).toFixed(1)}px ${(offsetY * 0.12).toFixed(1)}px ${(
+				numberParam("shadow.blur", 8) * 0.12
+			).toFixed(1)}px ${stringParam("shadow.color", "#000000")}`,
+		);
+	}
+	if (shadows.length > 0) {
+		style.textShadow = shadows.join(", ");
 	}
 	if (flagParam("background.enabled")) {
 		style.backgroundColor = stringParam("background.color", "#000000");

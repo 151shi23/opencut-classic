@@ -211,6 +211,25 @@ const textElementParams: ElementParamDefinition[] = [
 		keyframable: false,
 	},
 	{
+		// 三段渐变的中间那一跳；和两端都一样时渲染侧会跳过
+		key: "colorMid",
+		label: "Fill mid color",
+		type: "color",
+		default: "#ffffff",
+		keyframable: false,
+	},
+	{
+		// CSS 角度约定：0=下往上，90=左往右，180=上往下
+		key: "gradientAngle",
+		label: "Gradient angle",
+		type: "number",
+		default: 180,
+		min: 0,
+		max: 360,
+		step: 15,
+		keyframable: false,
+	},
+	{
 		key: "textAlign",
 		label: "Text Align",
 		type: "select",
@@ -443,6 +462,28 @@ const textElementParams: ElementParamDefinition[] = [
 		step: 1,
 		group: "shadow",
 		dependencies: [{ param: "shadow.enabled", equals: true }],
+	},
+	// ---- 花字新增：立体挤出（3D 字），不依赖描边/阴影开关 ----
+	{
+		key: "extrude.color",
+		label: "3D extrude color",
+		type: "color",
+		default: "#000000",
+		keyframable: false,
+		group: "extrude",
+	},
+	{
+		key: "extrude.width",
+		label: "3D extrude depth",
+		type: "number",
+		// 占字号高度的百分比（不是像素）：字号本身按画布高度缩放，
+		// 用像素的话同一套花字在 720p / 1080p 上立体感差一倍
+		default: 0,
+		min: 0,
+		max: 60,
+		step: 1,
+		keyframable: false,
+		group: "extrude",
 	},
 ];
 

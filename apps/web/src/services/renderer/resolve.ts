@@ -447,6 +447,25 @@ function resolveTextNode({
 			typeof node.params.params["colorEnd"] === "string"
 				? node.params.params["colorEnd"]
 				: null,
+		textColorMid:
+			typeof node.params.params["colorMid"] === "string"
+				? node.params.params["colorMid"]
+				: null,
+		gradientAngle:
+			typeof node.params.params["gradientAngle"] === "number"
+				? node.params.params["gradientAngle"]
+				: 180,
+		extrude:
+			typeof node.params.params["extrude.width"] === "number" &&
+			node.params.params["extrude.width"] > 0
+				? {
+						color:
+							typeof node.params.params["extrude.color"] === "string"
+								? node.params.params["extrude.color"]
+								: "#000000",
+						width: node.params.params["extrude.width"],
+					}
+				: null,
 		backgroundColor: resolveColorAtTime({
 			baseColor: background.color,
 			animations: node.params.animations,

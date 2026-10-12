@@ -164,28 +164,55 @@ export function measureTextLayout({
 }
 
 /**
- * 每一行单独铺一次渐变（上→下），多行时每行都是完整的渐变，
- * 不会因为行数变多而被拉成一条长条。
+ * 每一行单独铺一次渐变（多行时每行都是完整的渐变，不会被拉成一条长条）。
+ *
+ * 角度用 CSS 的约定：0deg 从下往上、90deg 从左往右、180deg 从上往下（默认）。
+ * 渐变线取字形盒在该方向上的投影，所以 45° 之类的斜向也是"贴着字"走而不是贴着画面。
  */
 function buildLineFillStyle({
 	ctx,
 	layout,
 	textColor,
 	textColorEnd,
+	textColorMid,
+	gradientAngle,
 	lineY,
+	lineWidth,
 }: {
 	ctx: TextCanvasContext;
 	layout: MeasuredTextLayout;
 	textColor: string;
 	textColorEnd?: string | null;
+	textColorMid?: string | null;
+	gradientAngle?: number;
 	lineY: number;
+	lineWidth: number;
 }): string | CanvasGradient {
 	if (!textColorEnd || textColorEnd === textColor) {
 		return textColor;
 	}
-	const half = layout.scaledFontSize * 0.55;
-	const gradient = ctx.createLinearGradient(0, lineY - half, 0, lineY + half);
+	const halfHeight = layout.scaledFontSize * 0.55;
+	const halfWidth = Math.max(lineWidth, halfHeight * 2) / 2;
+	const theta = ((gradientAngle ?? 180) * Math.PI) / 180;
+	const dx = Math.sin(theta);
+	const dy = -Math.cos(theta);
+	const centerX =
+		layout.textAlign === "left"
+			? halfWidth
+			: layout.textAlign === "right"
+				? -halfWidth
+				: 0;
+	const span = Math.abs(halfWidth * dx) + Math.abs(halfHeight * dy);
+	const gradient = ctx.createLinearGradient(
+		centerX - dx * span,
+		lineY - dy * span,
+		centerX + dx * span,
+		lineY + dy * span,
+	);
 	gradient.addColorStop(0, textColor);
+	if (textColorMid && textColorMid !== textColor && textColorMid !== textColorEnd) {
+		gradient.addColorStop(0.5, textColorMid);
+	}
 	gradient.addColorStop(1, textColorEnd);
 	return gradient;
 }
@@ -195,6 +222,9 @@ export function drawMeasuredTextLayout({
 	layout,
 	textColor,
 	textColorEnd,
+	textColorMid,
+	gradientAngle,
+	extrude,
 	background,
 	backgroundColor,
 	stroke,
@@ -204,8 +234,14 @@ export function drawMeasuredTextLayout({
 	ctx: TextCanvasContext;
 	layout: MeasuredTextLayout;
 	textColor: string;
-	/** 给了就按「上→下」渐变填充（花字用），不给就是单色 */
+	/** 给了就按角度渐变填充（花字用），不给就是单色 */
 	textColorEnd?: string | null;
+	/** 可选的中间色，凑出三段渐变 */
+	textColorMid?: string | null;
+	/** CSS 约定：0=下往上，90=左往右，180=上往下（默认） */
+	gradientAngle?: number;
+	/** 立体挤出：沿右下方向叠若干层同色文字，画在描边之前 */
+	extrude?: { color: string; width: number } | null;
 	background?: ResolvedTextBackgroundLike | null;
 	backgroundColor?: string;
 	stroke?: {
@@ -296,6 +332,27 @@ export function drawMeasuredTextLayout({
 
 	for (let index = 0; index < layout.lines.length; index++) {
 		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
+		const lineWidth = layout.lineMetrics[index]?.width ?? 0;
+		if (extrude && extrude.width > 0) {
+			/*
+			 * 立体字：沿右下方向叠若干层实心副本，最远的先画。
+			 *
+			 * 深度按**字号的百分比**算，不是原始像素 —— 字号本身是相对画布高的
+			 * （见 scaledFontSize），用绝对像素的话同一套花字在 720p 和 1080p 上
+			 * 立体感差一倍，而且大字上几乎看不出来。
+			 * 层数封顶 16 层：每层一次 fillText，手机上每帧都要跑。
+			 */
+			if (shadow) hideShadow();
+			ctx.fillStyle = extrude.color;
+			const depthPx = (extrude.width / 100) * layout.scaledFontSize;
+			const steps = Math.min(Math.max(Math.round(depthPx), 1), 16);
+			const perStep = depthPx / steps;
+			for (let depth = steps; depth >= 1; depth--) {
+				const offset = depth * perStep * 0.75;
+				ctx.fillText(layout.lines[index], offset, lineY + offset);
+			}
+			if (shadow) showShadow();
+		}
 		if (stroke && hasStroke) {
 			// 描边层不带阴影（阴影只在填充层，否则叠两层发脏）
 			if (shadow) hideShadow();
@@ -323,7 +380,10 @@ export function drawMeasuredTextLayout({
 			layout,
 			textColor,
 			textColorEnd,
+			textColorMid,
+			gradientAngle,
 			lineY,
+			lineWidth,
 		});
 		ctx.fillText(layout.lines[index], 0, lineY);
 		drawTextDecoration({

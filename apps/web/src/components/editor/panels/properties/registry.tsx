@@ -46,6 +46,8 @@ const TEXT_PARAM_KEYS = [
 	"fontSize",
 	"color",
 	"colorEnd",
+	"colorMid",
+	"gradientAngle",
 	"textAlign",
 	"fontWeight",
 	"fontStyle",
@@ -71,6 +73,8 @@ const TEXT_PARAM_KEYS = [
 	"shadow.blur",
 	"shadow.offsetX",
 	"shadow.offsetY",
+	"extrude.color",
+	"extrude.width",
 ] as const;
 
 export type TabContentProps = {
