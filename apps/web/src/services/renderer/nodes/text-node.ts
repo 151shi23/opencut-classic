@@ -11,6 +11,8 @@ export type TextNodeParams = TextElement & {
 	blendMode?: BlendMode;
 	canvasCenter: { x: number; y: number };
 	canvasHeight: number;
+	/** 「文字框宽」按画布宽度的百分比折行，所以排版要知道宽度 */
+	canvasWidth?: number;
 	textBaseline?: CanvasTextBaseline;
 };
 

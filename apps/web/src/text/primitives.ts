@@ -9,6 +9,7 @@ import {
 	setCanvasLetterSpacing,
 } from "./layout";
 import { FONT_SIZE_SCALE_REFERENCE } from "./typography";
+import { wrapTextContent } from "./wrap";
 
 export type TextAlign = "left" | "center" | "right";
 export type TextFontWeight = "normal" | "bold";
@@ -25,6 +26,8 @@ export interface TextLayoutParams {
 	textDecoration?: TextDecoration;
 	letterSpacing?: number;
 	lineHeight?: number;
+	/** 文字框宽度，占画布宽度的百分比；0 或不填 = 不折行（老工程行为不变） */
+	maxWidth?: number;
 }
 
 export interface ResolvedTextLayout {
@@ -103,17 +106,33 @@ export function resolveTextLayout({
 	};
 }
 
+function getWrapWidthPx({
+	text,
+	canvasWidth,
+}: {
+	text: TextLayoutParams;
+	canvasWidth?: number;
+}): number {
+	const percent = text.maxWidth ?? 0;
+	if (!canvasWidth || percent <= 0) {
+		return 0;
+	}
+	return (canvasWidth * clamp({ value: percent, min: 0, max: 100 })) / 100;
+}
+
 export function measureTextLayout({
 	text,
 	canvasHeight,
+	canvasWidth,
 	ctx,
 }: {
 	text: TextLayoutParams;
 	canvasHeight: number;
+	/** 折行用的画布宽度；只有设了「文字框宽」才会用到 */
+	canvasWidth?: number;
 	ctx: TextCanvasContext;
 }): MeasuredTextLayout {
 	const resolvedLayout = resolveTextLayout({ text, canvasHeight });
-	const lines = text.content.split("\n");
 
 	ctx.save();
 	ctx.font = resolvedLayout.fontString;
@@ -121,6 +140,12 @@ export function measureTextLayout({
 	setCanvasLetterSpacing({
 		ctx,
 		letterSpacingPx: resolvedLayout.letterSpacing,
+	});
+	// 折行必须在字体和字间距都设好之后量，否则宽度对不上
+	const lines = wrapTextContent({
+		content: text.content,
+		maxWidthPx: getWrapWidthPx({ text, canvasWidth }),
+		measure: ({ text: line }) => ctx.measureText(line).width,
 	});
 	const lineMetrics = lines.map((line) => ctx.measureText(line));
 	ctx.restore();

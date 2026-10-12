@@ -116,6 +116,7 @@ function buildTrackNodes({
 						blendMode: readBlendModeFromParams({ params: element.params }),
 						canvasCenter: { x: canvasSize.width / 2, y: canvasSize.height / 2 },
 						canvasHeight: canvasSize.height,
+						canvasWidth: canvasSize.width,
 						textBaseline: "middle",
 						effects: element.effects ?? [],
 					}),

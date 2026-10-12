@@ -15,6 +15,8 @@ export interface MediaDragData extends BaseDragData {
 export interface TextDragData extends BaseDragData {
 	type: "text";
 	content: string;
+	/** 样式预设带过来的参数覆盖；不填就是普通默认文字 */
+	params?: ParamValues;
 }
 
 export interface StickerDragData extends BaseDragData {

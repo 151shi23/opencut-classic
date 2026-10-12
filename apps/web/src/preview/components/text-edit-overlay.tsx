@@ -114,6 +114,8 @@ export function TextEditOverlay({
 	const canvasPaddingY = shouldShowBackground
 		? (bg.paddingY ?? DEFAULTS.text.background.paddingY) * fontSizeRatio
 		: 0;
+	// 设了「文字框宽」就让编辑框跟着一起折，否则改的时候看到一行、改完变成两行
+	const wrapPercent = textParams.maxWidth ?? 0;
 
 	return (
 		<div
@@ -153,6 +155,11 @@ export function TextEditOverlay({
 						? `${canvasPaddingY}px ${canvasPaddingX}px`
 						: 0,
 					minWidth: 1,
+					maxWidth:
+						wrapPercent > 0
+							? `${(canvasSize.width * Math.min(wrapPercent, 100)) / 100}px`
+							: undefined,
+					whiteSpace: wrapPercent > 0 ? "pre-wrap" : "pre",
 				}}
 				onInput={handleInput}
 				onBlur={onCommit}

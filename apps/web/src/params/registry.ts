@@ -265,6 +265,18 @@ const textElementParams: ElementParamDefinition[] = [
 		step: 0.1,
 	},
 	{
+		key: "maxWidth",
+		label: "Text box width",
+		type: "number",
+		// 0 = 不折行，跟老工程一样；100 = 按整个画面宽折行
+		default: 0,
+		min: 0,
+		max: 100,
+		step: 1,
+		// 布局约束不做插值：别再造一条"面板能开、渲染不读"的死通道
+		keyframable: false,
+	},
+	{
 		key: "background.enabled",
 		label: "Background Enabled",
 		type: "boolean",

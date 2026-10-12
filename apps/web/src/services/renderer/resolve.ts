@@ -505,6 +505,7 @@ function resolveTextNode({
 		measuredText: measureTextElement({
 			element: node.params,
 			canvasHeight: node.params.canvasHeight,
+			canvasWidth: node.params.canvasWidth,
 			localTime,
 			ctx: getTextMeasurementContext(),
 		}),

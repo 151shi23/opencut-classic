@@ -66,11 +66,14 @@ export function getTextMeasurementContext():
 export function measureTextElement({
 	element,
 	canvasHeight,
+	canvasWidth,
 	localTime,
 	ctx,
 }: {
 	element: TextElement;
 	canvasHeight: number;
+	/** 画布宽度：设了「文字框宽」才用得上，用来把百分比换成像素 */
+	canvasWidth?: number;
 	localTime: number;
 	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 }): MeasuredTextElement {
@@ -79,6 +82,7 @@ export function measureTextElement({
 	const measuredLayout = measureTextLayout({
 		text,
 		canvasHeight,
+		canvasWidth,
 		ctx,
 	});
 
@@ -223,6 +227,11 @@ export function buildTextLayoutParamsFromElement({
 			key: "lineHeight",
 			fallback: DEFAULTS.text.lineHeight,
 			localTime,
+		}),
+		maxWidth: readNumberParam({
+			params: element.params,
+			key: "maxWidth",
+			fallback: 0,
 		}),
 	};
 }
