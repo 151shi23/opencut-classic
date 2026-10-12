@@ -1,5 +1,33 @@
 # OpenCut (Legacy)
 
+> ## 这个分支是什么
+>
+> 这是 **Mineways（安卓 App）内嵌剪辑器**的工作分支：上游这份 legacy 代码被移植进
+> App 的 WebView，按触屏和小屏重做了交互，并持续加自己的功能。上游已归档、不接受 PR，
+> 所以这里的提交就是主线。
+>
+> **移动端已落地的部分**
+>
+> - 离线字幕自动识别（WASM 端 Whisper，权重随包发布，不上传音频）
+> - 在线字体：走自带资源服务的文件包（包 → 文件两级，HMAC 签名 + sha256 校验），
+>   以及本地 TTF/OTF/WOFF 导入
+> - 文字样式库：34 套预设，其中 2 套自带关键帧（流光鎏金、呼吸霓虹 —— 落进时间轴就在自己动）；
+>   渲染侧支持多段渐变 + 渐变角度、两圈描边（内圈可各自渐变）、立体挤出、多层光晕、
+>   故障重影、自动换行
+> - 关键帧通道打通：排版参数、描边/阴影数值、渐变角度都能打点、能在时间轴泳道上拖曲线
+> - 稳定性：损坏工程不再被静默洗成空工程、工程列表可见可删、缩略图降尺寸
+> - 中文界面：标签、占位符、tooltip 和动态拼接的句子都进字典表（遮罩面板还残留个别英文词条）
+>
+> 待办与已知问题都记在 [Issues](https://github.com/151shi23/opencut-classic/issues) 里（含
+> `bun test` 起不来 wasm 的测试墙、竖排、字体中文覆盖提示、手机端拖拽调节）。
+>
+> ```bash
+> bun install
+> bun run dev     # http://localhost:3000
+> bun test        # 基线：179 pass / 4 fail，那 4 条是 opencut-wasm 在 bun 下起不来
+> bun run build   # 静态导出，产物再镜像进安卓工程
+> ```
+
 This is the original OpenCut codebase. It's archived and no longer maintained.
 
 The rewrite is happening at [opencut-app/opencut](https://github.com/opencut-app/opencut).
