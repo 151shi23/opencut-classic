@@ -18,6 +18,16 @@ export const ANIMATION_PROPERTY_PATHS = [
 	"background.cornerRadius",
 	"stroke.color",
 	"shadow.color",
+	// 文字面板上的排版参数：`ElementParamsTab` 用裸 key 当属性路径
+	// （`element-params-tab.tsx` 里 `propertyPath: param.key`），不注册进这张表
+	// 的话 `isAnimationPath()` 不认，关键帧写了也不会出现在时间轴泳道上。
+	"fontSize",
+	"letterSpacing",
+	"lineHeight",
+	"stroke.width",
+	"shadow.blur",
+	"shadow.offsetX",
+	"shadow.offsetY",
 ] as const;
 
 export type AnimationPropertyPath = (typeof ANIMATION_PROPERTY_PATHS)[number];

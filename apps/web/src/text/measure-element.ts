@@ -3,6 +3,7 @@ import { DEFAULTS } from "@/timeline/defaults";
 import type { TextElement } from "@/timeline";
 import type { TextBackground } from "@/text/background";
 import { resolveNumberAtTime } from "@/animation/values";
+import type { AnimationNumericPropertyPath } from "@/animation/types";
 import {
 	getTextVisualRect,
 } from "./layout";
@@ -73,7 +74,8 @@ export function measureTextElement({
 	localTime: number;
 	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 }): MeasuredTextElement {
-	const text = buildTextLayoutParamsFromElement({ element });
+	// localTime 往下传：字号 / 字间距 / 行高都是会影响排版的关键帧属性
+	const text = buildTextLayoutParamsFromElement({ element, localTime });
 	const measuredLayout = measureTextLayout({
 		text,
 		canvasHeight,
@@ -129,10 +131,53 @@ export function measureTextElement({
 	};
 }
 
-export function buildTextLayoutParamsFromElement({
+type TextLayoutNumberPath = Extract<
+	AnimationNumericPropertyPath,
+	"fontSize" | "letterSpacing" | "lineHeight"
+>;
+
+/**
+ * 读一个"可能被关键帧驱动"的数值参数。
+ *
+ * 路径是**裸 key**（`fontSize`），和写入侧一致：文字面板走 `ElementParamsTab`，
+ * 它给 `useKeyframedParamProperty` 传的就是 `propertyPath: param.key`
+ * （`components/editor/panels/properties/components/element-params-tab.tsx:87`）。
+ * 只有 graphic 元素才用 `params.<key>` 前缀。以前这里静态读 `element.params`，
+ * 于是字号/字间距/行高**能开关键帧、画面却一动不动**。
+ *
+ * 不传 `localTime` 就是"要基准值"：文字编辑浮层改的是参数本身，那里必须显示与编辑
+ * 未参与动画插值的原值，不能被某一帧的插值结果顶掉。
+ */
+function readAnimatedNumberParam({
 	element,
+	key,
+	fallback,
+	localTime,
 }: {
 	element: TextElement;
+	key: TextLayoutNumberPath;
+	fallback: number;
+	localTime?: number;
+}): number {
+	const base = readNumberParam({ params: element.params, key, fallback });
+	if (localTime === undefined) {
+		return base;
+	}
+	return resolveNumberAtTime({
+		baseValue: base,
+		animations: element.animations,
+		propertyPath: key,
+		localTime,
+	});
+}
+
+export function buildTextLayoutParamsFromElement({
+	element,
+	localTime,
+}: {
+	element: TextElement;
+	/** 元素内时间；给了才会去采样 `params.*` 关键帧 */
+	localTime?: number;
 }): TextLayoutParams {
 	return {
 		content: readStringParam({
@@ -140,10 +185,11 @@ export function buildTextLayoutParamsFromElement({
 			key: "content",
 			fallback: "Default text",
 		}),
-		fontSize: readNumberParam({
-			params: element.params,
+		fontSize: readAnimatedNumberParam({
+			element,
 			key: "fontSize",
 			fallback: 15,
+			localTime,
 		}),
 		fontFamily: readStringParam({
 			params: element.params,
@@ -166,15 +212,17 @@ export function buildTextLayoutParamsFromElement({
 			value: element.params.textDecoration,
 			fallback: "none",
 		}),
-		letterSpacing: readNumberParam({
-			params: element.params,
+		letterSpacing: readAnimatedNumberParam({
+			element,
 			key: "letterSpacing",
 			fallback: DEFAULTS.text.letterSpacing,
+			localTime,
 		}),
-		lineHeight: readNumberParam({
-			params: element.params,
+		lineHeight: readAnimatedNumberParam({
+			element,
 			key: "lineHeight",
 			fallback: DEFAULTS.text.lineHeight,
+			localTime,
 		}),
 	};
 }

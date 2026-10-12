@@ -22,7 +22,7 @@ import {
 	getTextMeasurementContext,
 	measureTextElement,
 } from "@/text/measure-element";
-import { resolveColorAtTime, resolveOpacityAtTime } from "@/animation/values";
+import { resolveColorAtTime, resolveNumberAtTime, resolveOpacityAtTime } from "@/animation/values";
 import { resolveTransformAtTime } from "@/rendering/animation-values";
 import { videoCache } from "@/services/video-cache/service";
 import type { CanvasRenderer } from "./canvas-renderer";
@@ -394,13 +394,18 @@ function resolveTextNode({
 	});
 	const background = buildTextBackgroundFromElement({ element: node.params });
 
-	// 安卓移植新增：描边 / 阴影（剪映同款）。开关不参与关键帧，颜色可以。
+	// 安卓移植新增：描边 / 阴影（剪映同款）。开关不参与关键帧，颜色和数值都采样。
 	const strokeEnabled = node.params.params["stroke.enabled"] === true;
 	const shadowEnabled = node.params.params["shadow.enabled"] === true;
-	const strokeWidth =
-		typeof node.params.params["stroke.width"] === "number"
-			? node.params.params["stroke.width"]
-			: 4;
+	const strokeWidth = resolveNumberAtTime({
+		baseValue:
+			typeof node.params.params["stroke.width"] === "number"
+				? node.params.params["stroke.width"]
+				: 4,
+		animations: node.params.animations,
+		propertyPath: "stroke.width",
+		localTime,
+	});
 
 	const textEffects = resolveElementEffects({
 		effects: node.params.effects,
@@ -455,22 +460,44 @@ function resolveTextNode({
 				: null,
 		shadow: shadowEnabled
 			? {
-					color:
-						typeof node.params.params["shadow.color"] === "string"
-							? node.params.params["shadow.color"]
-							: "#000000",
-					blur:
-						typeof node.params.params["shadow.blur"] === "number"
-							? node.params.params["shadow.blur"]
-							: 8,
-					offsetX:
-						typeof node.params.params["shadow.offsetX"] === "number"
-							? node.params.params["shadow.offsetX"]
-							: 0,
-					offsetY:
-						typeof node.params.params["shadow.offsetY"] === "number"
-							? node.params.params["shadow.offsetY"]
-							: 4,
+					// 颜色和数值都从关键帧采样：这几条路径在 animation/types.ts 里
+					// 声明为可打关键帧，面板能开、曲线能拖，画面就必须跟着动。
+					color: resolveColorAtTime({
+						baseColor:
+							typeof node.params.params["shadow.color"] === "string"
+								? node.params.params["shadow.color"]
+								: "#000000",
+						animations: node.params.animations,
+						propertyPath: "shadow.color",
+						localTime,
+					}),
+					blur: resolveNumberAtTime({
+						baseValue:
+							typeof node.params.params["shadow.blur"] === "number"
+								? node.params.params["shadow.blur"]
+								: 8,
+						animations: node.params.animations,
+						propertyPath: "shadow.blur",
+						localTime,
+					}),
+					offsetX: resolveNumberAtTime({
+						baseValue:
+							typeof node.params.params["shadow.offsetX"] === "number"
+								? node.params.params["shadow.offsetX"]
+								: 0,
+						animations: node.params.animations,
+						propertyPath: "shadow.offsetX",
+						localTime,
+					}),
+					offsetY: resolveNumberAtTime({
+						baseValue:
+							typeof node.params.params["shadow.offsetY"] === "number"
+								? node.params.params["shadow.offsetY"]
+								: 4,
+						animations: node.params.animations,
+						propertyPath: "shadow.offsetY",
+						localTime,
+					}),
 				}
 			: null,
 		effectPasses: textEffects.effectPasses,

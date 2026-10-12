@@ -15,10 +15,22 @@ interface PropertyGroupDefinition {
 	matchesPath: (path: AnimationPath) => boolean;
 }
 
+// 文字元素上用裸 key 打关键帧的参数（见 animation/types.ts 的注释）
+const ANIMATED_TEXT_PATHS = new Set([
+	"fontSize",
+	"letterSpacing",
+	"lineHeight",
+	"stroke.width",
+	"shadow.blur",
+	"shadow.offsetX",
+	"shadow.offsetY",
+]);
+
 const PROPERTY_GROUPS: PropertyGroupDefinition[] = [
 	{ matchesPath: (path) => path.startsWith("transform.") || path === "opacity" },
 	{ matchesPath: (path) => path === "volume" || path === "color" },
 	{ matchesPath: (path) => path.startsWith("background.") },
+	{ matchesPath: (path) => ANIMATED_TEXT_PATHS.has(path) },
 	{ matchesPath: (path) => path.startsWith("params.") },
 	{ matchesPath: (path) => path.startsWith("effects.") },
 ];
@@ -32,6 +44,13 @@ const PROPERTY_LABELS: Partial<Record<string, string>> = {
 	opacity: "Opacity",
 	volume: "Volume",
 	color: "Color",
+	fontSize: "Font Size",
+	letterSpacing: "Letter Spacing",
+	lineHeight: "Line Height",
+	"stroke.width": "Stroke Width",
+	"shadow.blur": "Shadow Blur",
+	"shadow.offsetX": "Shadow Offset X",
+	"shadow.offsetY": "Shadow Offset Y",
 	"background.color": "BG Color",
 	"background.paddingX": "BG Pad X",
 	"background.paddingY": "BG Pad Y",
