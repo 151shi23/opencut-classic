@@ -406,6 +406,11 @@ function resolveTextNode({
 		propertyPath: "stroke.width",
 		localTime,
 	});
+	// 外描边只做静态读：参数注册表里标了 keyframable:false，别造死通道
+	const strokeOuterWidth =
+		typeof node.params.params["stroke.outerWidth"] === "number"
+			? node.params.params["stroke.outerWidth"]
+			: 0;
 
 	const textEffects = resolveElementEffects({
 		effects: node.params.effects,
@@ -437,6 +442,11 @@ function resolveTextNode({
 			propertyPath: "color",
 			localTime,
 		}),
+		// 花字的渐变下端色；没设就跟 fillColor 一样（单色）
+		textColorEnd:
+			typeof node.params.params["colorEnd"] === "string"
+				? node.params.params["colorEnd"]
+				: null,
 		backgroundColor: resolveColorAtTime({
 			baseColor: background.color,
 			animations: node.params.animations,
@@ -444,7 +454,7 @@ function resolveTextNode({
 			localTime,
 		}),
 		stroke:
-			strokeEnabled && strokeWidth > 0
+			strokeEnabled && (strokeWidth > 0 || strokeOuterWidth > 0)
 				? {
 						color: resolveColorAtTime({
 							baseColor:
@@ -456,6 +466,11 @@ function resolveTextNode({
 							localTime,
 						}),
 						width: strokeWidth,
+						outerColor:
+							typeof node.params.params["stroke.outerColor"] === "string"
+								? node.params.params["stroke.outerColor"]
+								: null,
+						outerWidth: strokeOuterWidth,
 					}
 				: null,
 		shadow: shadowEnabled

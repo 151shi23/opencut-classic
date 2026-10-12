@@ -203,6 +203,14 @@ const textElementParams: ElementParamDefinition[] = [
 		default: "#ffffff",
 	},
 	{
+		// 花字：填色从这个值往下渐变到它。和 color 相同就等于单色，渲染侧会走快路径
+		key: "colorEnd",
+		label: "Fill gradient",
+		type: "color",
+		default: "#ffffff",
+		keyframable: false,
+	},
+	{
 		key: "textAlign",
 		label: "Text Align",
 		type: "select",
@@ -361,6 +369,28 @@ const textElementParams: ElementParamDefinition[] = [
 		min: 0,
 		max: 60,
 		step: 0.5,
+		group: "stroke",
+		dependencies: [{ param: "stroke.enabled", equals: true }],
+	},
+	{
+		key: "stroke.outerColor",
+		label: "Outer stroke color",
+		type: "color",
+		default: "#000000",
+		keyframable: false,
+		group: "stroke",
+		dependencies: [{ param: "stroke.enabled", equals: true }],
+	},
+	{
+		key: "stroke.outerWidth",
+		label: "Outer stroke width",
+		type: "number",
+		// 外圈的可见厚度；0 = 没有第二圈
+		default: 0,
+		min: 0,
+		max: 40,
+		step: 0.5,
+		keyframable: false,
 		group: "stroke",
 		dependencies: [{ param: "stroke.enabled", equals: true }],
 	},

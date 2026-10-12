@@ -20,6 +20,9 @@ export type TextNodeParams = TextElement & {
 export interface ResolvedTextStroke {
 	color: string;
 	width: number;
+	/** 花字用的第二圈描边，画在 width 之外 */
+	outerColor?: string | null;
+	outerWidth?: number;
 }
 
 export interface ResolvedTextShadow {
@@ -33,6 +36,8 @@ export interface ResolvedTextNodeState {
 	transform: Transform;
 	opacity: number;
 	textColor: string;
+	/** 渐变填充的下端色；null = 单色填充 */
+	textColorEnd: string | null;
 	backgroundColor: string;
 	stroke: ResolvedTextStroke | null;
 	shadow: ResolvedTextShadow | null;
@@ -70,6 +75,7 @@ export function renderTextToContext({
 		ctx,
 		layout: resolved.measuredText,
 		textColor: resolved.textColor,
+		textColorEnd: resolved.textColorEnd,
 		background: resolved.measuredText.resolvedBackground,
 		backgroundColor: resolved.backgroundColor,
 		stroke: resolved.stroke,

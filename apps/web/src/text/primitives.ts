@@ -163,10 +163,38 @@ export function measureTextLayout({
 	};
 }
 
+/**
+ * 每一行单独铺一次渐变（上→下），多行时每行都是完整的渐变，
+ * 不会因为行数变多而被拉成一条长条。
+ */
+function buildLineFillStyle({
+	ctx,
+	layout,
+	textColor,
+	textColorEnd,
+	lineY,
+}: {
+	ctx: TextCanvasContext;
+	layout: MeasuredTextLayout;
+	textColor: string;
+	textColorEnd?: string | null;
+	lineY: number;
+}): string | CanvasGradient {
+	if (!textColorEnd || textColorEnd === textColor) {
+		return textColor;
+	}
+	const half = layout.scaledFontSize * 0.55;
+	const gradient = ctx.createLinearGradient(0, lineY - half, 0, lineY + half);
+	gradient.addColorStop(0, textColor);
+	gradient.addColorStop(1, textColorEnd);
+	return gradient;
+}
+
 export function drawMeasuredTextLayout({
 	ctx,
 	layout,
 	textColor,
+	textColorEnd,
 	background,
 	backgroundColor,
 	stroke,
@@ -176,9 +204,17 @@ export function drawMeasuredTextLayout({
 	ctx: TextCanvasContext;
 	layout: MeasuredTextLayout;
 	textColor: string;
+	/** 给了就按「上→下」渐变填充（花字用），不给就是单色 */
+	textColorEnd?: string | null;
 	background?: ResolvedTextBackgroundLike | null;
 	backgroundColor?: string;
-	stroke?: { color: string; width: number } | null;
+	stroke?: {
+		color: string;
+		width: number;
+		outerColor?: string | null;
+		/** 外圈描边的可见厚度：画在 `width` 之外，所以线宽是 width + 2×outerWidth */
+		outerWidth?: number;
+	} | null;
 	shadow?: {
 		color: string;
 		blur: number;
@@ -240,28 +276,55 @@ export function drawMeasuredTextLayout({
 		ctx.shadowOffsetY = shadow.offsetY;
 	}
 
+	const innerStrokeWidth = stroke?.width ?? 0;
+	const outerStrokeWidth = stroke?.outerWidth ?? 0;
+	const hasStroke =
+		innerStrokeWidth > 0 || outerStrokeWidth > 0;
+	const hideShadow = () => {
+		ctx.shadowColor = "transparent";
+		ctx.shadowBlur = 0;
+		ctx.shadowOffsetX = 0;
+		ctx.shadowOffsetY = 0;
+	};
+	const showShadow = () => {
+		if (!shadow) return;
+		ctx.shadowColor = shadow.color;
+		ctx.shadowBlur = shadow.blur;
+		ctx.shadowOffsetX = shadow.offsetX;
+		ctx.shadowOffsetY = shadow.offsetY;
+	};
+
 	for (let index = 0; index < layout.lines.length; index++) {
 		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
-		if (stroke && stroke.width > 0) {
+		if (stroke && hasStroke) {
 			// 描边层不带阴影（阴影只在填充层，否则叠两层发脏）
-			if (shadow) {
-				ctx.shadowColor = "transparent";
-				ctx.shadowBlur = 0;
-				ctx.shadowOffsetX = 0;
-				ctx.shadowOffsetY = 0;
-			}
-			ctx.strokeStyle = stroke.color;
-			ctx.lineWidth = stroke.width;
+			if (shadow) hideShadow();
 			ctx.lineJoin = "round";
 			ctx.lineCap = "round";
-			ctx.strokeText(layout.lines[index], 0, lineY);
-			if (shadow) {
-				ctx.shadowColor = shadow.color;
-				ctx.shadowBlur = shadow.blur;
-				ctx.shadowOffsetX = shadow.offsetX;
-				ctx.shadowOffsetY = shadow.offsetY;
+			/*
+			 * 外圈先画。canvas 的 strokeText 是沿字形边缘居中的，所以外圈线宽要取
+			 * 「内圈 + 2×可见厚度」，多出来的那一半才真的套在内圈外面 —— 剪映的
+			 * 「描边 / 外描边」两层就是这个。
+			 */
+			if (outerStrokeWidth > 0) {
+				ctx.strokeStyle = stroke.outerColor || stroke.color;
+				ctx.lineWidth = innerStrokeWidth + outerStrokeWidth * 2;
+				ctx.strokeText(layout.lines[index], 0, lineY);
 			}
+			if (innerStrokeWidth > 0) {
+				ctx.strokeStyle = stroke.color;
+				ctx.lineWidth = innerStrokeWidth;
+				ctx.strokeText(layout.lines[index], 0, lineY);
+			}
+			if (shadow) showShadow();
 		}
+		ctx.fillStyle = buildLineFillStyle({
+			ctx,
+			layout,
+			textColor,
+			textColorEnd,
+			lineY,
+		});
 		ctx.fillText(layout.lines[index], 0, lineY);
 		drawTextDecoration({
 			ctx,
