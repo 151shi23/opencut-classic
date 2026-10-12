@@ -45,8 +45,13 @@ export function useFontAtlas({ open }: { open: boolean }) {
 	}, []);
 
 	const fontNames = useMemo(() => {
-		if (!atlas) return [];
-		return [...Object.keys(atlas.fonts), ...SYSTEM_FONTS].sort();
+		/*
+		 * 系统字体不依赖 atlas，就不该跟着它一起消失：以前 atlas 为 null 直接返回空数组，
+		 * 于是 /fonts/font-atlas.json 拉不到时连 Arial、Noto Sans 这些都不在名单里了。
+		 */
+		return [
+			...new Set([...Object.keys(atlas?.fonts ?? {}), ...SYSTEM_FONTS]),
+		].sort();
 	}, [atlas]);
 
 	return { atlas, status, fontNames, retry };

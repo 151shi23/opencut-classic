@@ -21,7 +21,11 @@ export function KeyframeToggle({
 			disabled={isDisabled}
 			title={title}
 			onClick={onToggle}
-			className="[&>svg]:size-3.5 mb-0.5"
+			/*
+			 * 图标只有 14px，在手机上基本点不中（旁边就是标签文字，误点还没反应）。
+			 * 用一个透明的 ::after 把命中区向四周各撑 8px，视觉尺寸和排版都不变。
+			 */
+			className="after:absolute after:-inset-2 after:content-[''] [&>svg]:size-3.5 relative mb-0.5"
 		>
 			<HugeiconsIcon
 				icon={KeyframeIcon}

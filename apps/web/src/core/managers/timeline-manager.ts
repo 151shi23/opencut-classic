@@ -727,6 +727,12 @@ export class TimelineManager {
 					...existingOverlay,
 					...elementUpdates,
 				} as Partial<TimelineElement>;
+				if (elementUpdates.params || existingOverlay?.params) {
+					mergedOverlay.params = {
+						...existingOverlay?.params,
+						...elementUpdates.params,
+					};
+				}
 				this.previewOverlay.set(elementId, mergedOverlay);
 			}
 		}
@@ -781,9 +787,19 @@ export class TimelineManager {
 
 			const nextElements = track.elements.map((element) => {
 				const overlay = this.previewOverlay.get(element.id);
-				return overlay
-					? ({ ...element, ...overlay } as TimelineElement)
-					: element;
+				if (!overlay) {
+					return element;
+				}
+				return {
+					...element,
+					...overlay,
+					// params 是逐键写的：预览里只改 content（画布内打字）或只改 volume
+					// （拖音量线）时，其余参数必须留在原位。提交路径 applyElementUpdate
+					// 就是这么合的，这里以前整块替换，等于把字号/颜色/描边/阴影全丢掉。
+					params: overlay.params
+						? { ...element.params, ...overlay.params }
+						: element.params,
+				} as TimelineElement;
 			});
 
 			return { ...track, elements: nextElements } as TTrack;

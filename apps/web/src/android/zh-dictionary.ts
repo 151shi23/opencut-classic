@@ -283,6 +283,7 @@ export const ZH_EXACT: Record<string, string> = {
 	"Font Style": "字形",
 	"Text Decoration": "文字装饰",
 	"Letter Spacing": "字间距",
+	"Text box width": "文字框宽 %",
 	"Letter spacing": "字间距",
 	"Line Height": "行高",
 	"Line height": "行高",
@@ -417,6 +418,12 @@ export const ZH_EXACT: Record<string, string> = {
 	"Pick a custom background color": "选择自定义背景色",
 	Checkerboard: "棋盘格",
 	"Default text": "默认文字",
+	// 文字样式预设（src/text/presets.ts）：卡片下面的名字，也是元素的 name
+	"Main title": "大标题",
+	Subtitle: "副标题",
+	"Outlined title": "白字黑边",
+	"Caption bar": "字幕条",
+	"Gilded text": "金字描边",
 	"My fonts": "我的字体",
 	"All fonts": "全部字体",
 	"No fonts found.": "没有找到字体。",
@@ -424,10 +431,13 @@ export const ZH_EXACT: Record<string, string> = {
 	// ---- 本地字体导入（导入 TTF/OTF，注册进 document.fonts）----
 	"Import font": "导入字体",
 	"Select a font": "选择字体",
-	// 占位符是 `Search ${页签名}...` 拼出来的，拼完是两条固定串，就按整句收
+	// 占位符是 `Search ${页签名}...` 拼出来的（页签名已转小写），拼完是固定串，就按整句收
 	"Search all fonts...": "搜索全部字体…",
 	"Search my fonts...": "搜索我的字体…",
+	"Search online fonts...": "搜索在线字体…",
 	"No fonts imported yet.": "还没有导入过字体。",
+	"Font previews are unavailable — the list still works.":
+		 "字体预览图没取到，下面的名单照样能用。",
 	"Fonts imported": "字体已导入",
 	"Font deleted": "字体已删除",
 	"Unsupported font file type": "不支持的字体文件类型",
@@ -590,6 +600,10 @@ export const ZH_EXACT: Record<string, string> = {
  */
 export const ZH_PATTERNS: Array<[RegExp, string]> = [
 	[/^Failed to process (.+)$/, "处理失败：$1"],
+	// 关键帧开关的提示语是 `Toggle ${参数名} keyframe` 拼出来的，参数名是英文标签
+	[/^Toggle (.+) keyframe$/, "为「$1」打关键帧"],
+	// 字体包那一行：件数与体积拼成一条整句后才会走到这里
+	[/^(\d+) files · (.+)$/, "$1 个文件 · $2"],
 	[/^Not enough browser storage for (.+)$/, "浏览器存储空间不足，无法处理：$1"],
 	[/^Unsupported file type: (.+)$/, "不支持的文件类型：$1"],
 	[/^Load more failed: (.+)$/, "加载更多失败：$1"],

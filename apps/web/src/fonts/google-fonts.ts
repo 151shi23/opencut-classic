@@ -71,12 +71,21 @@ export async function loadFullFont({
 		link.addEventListener("load", () => resolve(), { once: true });
 		link.addEventListener("error", () => resolve(), { once: true });
 	});
-	await Promise.all(
+	const loaded = await Promise.all(
 		weights.map((weight) =>
 			document.fonts.load(`${weight} 16px "${family.replace(/"/g, '\\"')}"`),
 		),
 	);
-	fullLoaded.add(family);
+	/*
+	 * 只有真的拿到 FontFace 才算"加载过了"。以前 error 事件和 load 一样 resolve，
+	 * 拿不到也写进 fullLoaded，于是国内网络访问不了 fonts.googleapis.com 时，
+	 * 用户选了字体 → 请求失败 → 被永久记成"已加载" → 画面永远用系统字体，
+	 * 而且再也不重试，看起来就像"这个字体没效果"。
+	 * 注意别用 document.fonts.check() 判断可用性：它对根本不存在的族也返回 true。
+	 */
+	if (loaded.some((faces) => faces.length > 0)) {
+		fullLoaded.add(family);
+	}
 }
 
 export async function loadFonts({

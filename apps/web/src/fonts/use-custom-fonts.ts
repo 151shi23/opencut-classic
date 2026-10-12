@@ -13,7 +13,15 @@ let registration: Promise<CustomFont[]> | null = null;
  */
 export function ensureCustomFontsRegistered(): Promise<CustomFont[]> {
 	if (!registration) {
-		registration = registerAllCustomFonts();
+		registration = registerAllCustomFonts().catch((error) => {
+			/*
+			 * 整批失败（OPFS 暂时打不开之类）不能留在缓存里：那样这个页面生命周期内
+			 * 每次打开字体选择器都会拿到同一个 rejected promise，导入过的字体就再也
+			 * 挂不上了。清掉它，下一次调用重新试。
+			 */
+			registration = null;
+			throw error;
+		});
 	}
 	return registration;
 }

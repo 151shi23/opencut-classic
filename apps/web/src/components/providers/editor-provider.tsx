@@ -47,10 +47,18 @@ export function EditorProvider({ projectId, children }: EditorProviderProps) {
 
 				if (cancelled) return;
 
+				/*
+				 * 导入的字体必须赶在第一次文字排版前挂上，否则工程里的文字会回退。
+				 * 以前这里是 `void ensureCustomFontsRegistered()` —— 注释写着"必须赶在
+				 * 前面"，代码却是发完就不管，于是首帧（和首帧缩略图）用的是系统字体。
+				 * 字体挂不上不该拦住开工程，所以 catch 掉，只等它试完。
+				 */
+				await ensureCustomFontsRegistered().catch(() => undefined);
+
+				if (cancelled) return;
+
 				setIsLoading(false);
 				loadFontAtlas();
-				// 导入的字体必须赶在第一次文字排版前挂上，否则工程里的文字会回退
-				void ensureCustomFontsRegistered();
 			} catch (err) {
 				if (cancelled) return;
 

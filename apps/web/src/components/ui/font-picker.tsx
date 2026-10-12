@@ -118,10 +118,12 @@ export function FontPicker({
 		try {
 			setOnlinePacks(await listOnlineFontPacks());
 			setOnlineStatus("ready");
-			// 包内容可能已换，展开状态与文件清单一律作废重拉
+			// 包内容可能已换，展开状态与文件清单一律作废重拉（错误文案也要清，
+			// 否则重新上架的包会顶着上一次的报错显示）
 			setOpenPack(null);
 			setPackFiles({});
 			setPackStatus({});
+			setPackError({});
 		} catch (error) {
 			setOnlineError(error instanceof Error ? error.message : String(error));
 			setOnlineStatus("error");
@@ -135,9 +137,7 @@ export function FontPicker({
 		void loadOnlinePacks();
 	}, [activeTab, loadOnlinePacks, onlineStatus, open]);
 
-	const expandPack = useCallback(async (slug: string) => {
-		setOpenPack(slug);
-		if (packStatus[slug]) return;
+	const fetchPackFiles = useCallback(async (slug: string) => {
 		setPackStatus((prev) => ({ ...prev, [slug]: "loading" }));
 		try {
 			const files = await listOnlinePackFiles({ slug });
@@ -150,7 +150,21 @@ export function FontPicker({
 			}));
 			setPackStatus((prev) => ({ ...prev, [slug]: "error" }));
 		}
-	}, [packStatus]);
+	}, []);
+
+	const expandPack = useCallback((slug: string) => {
+		setOpenPack(slug);
+	}, []);
+
+	/*
+	 * 拉清单改由 effect 驱动：「重试」只要把这条状态抹掉就会自动再拉一次。
+	 * 以前重试是在事件处理器里同步调 expandPack，而那次调用的闭包里 packStatus
+	 * 还是上一轮的 "error"，于是直接 return，界面永远停在"读取文件中"。
+	 */
+	useEffect(() => {
+		if (!openPack || packStatus[openPack]) return;
+		void fetchPackFiles(openPack);
+	}, [openPack, packStatus, fetchPackFiles]);
 
 	const importedSigs = useMemo(
 		() =>
@@ -213,6 +227,20 @@ export function FontPicker({
 		const query = search.toLowerCase();
 		return tabFonts.filter((name) => name.toLowerCase().includes(query));
 	}, [tabFonts, search]);
+
+	/*
+	 * 搜索框在「在线字体」页以前是死的：它只过滤 Google 那份列表，包列表走另一条
+	 * 渲染分支，于是输入什么都不变，占位符却写着 "Search online fonts…"。
+	 */
+	const visibleOnlinePacks = useMemo(() => {
+		if (!search) return onlinePacks;
+		const query = search.toLowerCase();
+		return onlinePacks.filter(
+			(pack) =>
+				pack.name.toLowerCase().includes(query) ||
+				pack.slug.toLowerCase().includes(query),
+		);
+	}, [onlinePacks, search]);
 
 	const listHeight = Math.min(
 		MAX_LIST_HEIGHT,
@@ -348,7 +376,12 @@ export function FontPicker({
 						Loading fonts...
 					</div>
 				)}
-				{status === "error" && (
+				{/*
+				 * 预览 sprite 拉不到只该影响"看不看得到样子"，不该把整份名单变没：
+				 * 以前列表渲染挂在 `atlas` 上，于是 /fonts/font-atlas.json 一挂，
+				 * "我的字体"整块被这句错误顶掉，用户以为导入过的字体丢了。
+				 */}
+				{status === "error" && filteredFonts.length === 0 && (
 					<div className="flex flex-col items-center gap-3 px-4 py-8">
 						<p className="text-center text-sm text-muted-foreground">
 							Failed to load font previews.
@@ -358,7 +391,12 @@ export function FontPicker({
 						</Button>
 					</div>
 				)}
-				{status === "idle" &&
+				{status === "error" && filteredFonts.length > 0 && (
+					<p className="text-muted-foreground px-3 pt-1 text-[10px]">
+						Font previews are unavailable — the list still works.
+					</p>
+				)}
+				{status !== "loading" &&
 					activeTab !== "online" &&
 					fontNames.length > 0 &&
 					filteredFonts.length === 0 && (
@@ -368,9 +406,8 @@ export function FontPicker({
 								: "No fonts found."}
 						</div>
 					)}
-				{status === "idle" &&
+				{status !== "loading" &&
 					activeTab !== "online" &&
-					atlas &&
 					filteredFonts.length > 0 && (
 						<List
 							rowCount={filteredFonts.length}
@@ -444,43 +481,53 @@ export function FontPicker({
 								</Button>
 							</div>
 						)}
-						{onlineStatus === "ready" && onlinePacks.length === 0 && (
-							<p className="text-muted-foreground px-3 py-6 text-center text-xs">
-								No online fonts.
-							</p>
-						)}
-						{onlineStatus === "ready" && !openPack && (
-							onlinePacks.map((pack) => (
-								<div
-									key={pack.slug}
-									className="flex items-center gap-2 px-3 py-1.5"
-								>
-									<div className="min-w-0 flex-1">
-										<p className="truncate text-xs">{pack.name}</p>
-										<p className="text-muted-foreground truncate text-[10px]">
-											{pack.fileCount} files · {formatSize(pack.totalSizeBytes)}
-											{pack.updatedAt ? ` · ${pack.updatedAt}` : ""}
-										</p>
+						{onlineStatus === "ready" &&
+							!openPack &&
+							(visibleOnlinePacks.length === 0 ? (
+								<p className="text-muted-foreground px-3 py-6 text-center text-xs">
+									{onlinePacks.length === 0
+										? "No online fonts."
+										: "No fonts found."}
+								</p>
+							) : (
+								visibleOnlinePacks.map((pack) => (
+									<div
+										key={pack.slug}
+										className="flex items-center gap-2 px-3 py-1.5"
+									>
+										<div className="min-w-0 flex-1">
+											<p className="truncate text-xs">{pack.name}</p>
+											{/* 拼成一条整句再交给汉化层：JSX 里并排写多个表达式会切成
+											    好几个文本节点，" files · " 这种半截节点谁都对不上 */}
+											<p className="text-muted-foreground truncate text-[10px]">
+												{[
+													`${pack.fileCount} files`,
+													formatSize(pack.totalSizeBytes),
+													pack.updatedAt,
+												]
+													.filter(Boolean)
+													.join(" · ")}
+											</p>
+										</div>
+										{/* 文档 §6.4：require_feature 非空 = 要先激活对应功能才能下载，
+										    服务端阶段二才强校验，现阶段由这边挡；宁可不给入口 */}
+										{pack.requireFeature ? (
+											<span className="text-muted-foreground shrink-0 text-[10px]">
+												Activate first
+											</span>
+										) : (
+											<Button
+												variant="outline"
+												size="sm"
+												className="shrink-0"
+												onClick={() => expandPack(pack.slug)}
+											>
+												Open
+											</Button>
+										)}
 									</div>
-									{/* 文档 §6.4：require_feature 非空 = 要先激活对应功能才能下载，
-									    服务端阶段二才强校验，现阶段由这边挡；宁可不给入口 */}
-									{pack.requireFeature ? (
-										<span className="text-muted-foreground shrink-0 text-[10px]">
-											Activate first
-										</span>
-									) : (
-										<Button
-											variant="outline"
-											size="sm"
-											className="shrink-0"
-											onClick={() => void expandPack(pack.slug)}
-										>
-											Open
-										</Button>
-									)}
-								</div>
-							))
-						)}
+								))
+							))}
 						{openPack && (
 							<OnlinePackFiles
 								slug={openPack}
@@ -490,12 +537,12 @@ export function FontPicker({
 								importedSigs={importedSigs}
 								downloadingKey={downloadingKey}
 								onRetry={() => {
+									// 抹掉状态即可，上面的 effect 会重新拉
 									setPackStatus((prev) => {
 										const next = { ...prev };
 										delete next[openPack];
 										return next;
 									});
-									void expandPack(openPack);
 								}}
 								onDownload={(file) => {
 									const pack = onlinePacks.find((p) => p.slug === openPack);
@@ -561,7 +608,7 @@ function FontSpritePreview({ entry }: { entry: FontAtlasEntry }) {
 }
 
 type FontRowProps = {
-	atlas: FontAtlas;
+	atlas: FontAtlas | null;
 	filteredFonts: string[];
 	selectedFont: string | undefined;
 	customFonts: { id: string; family: string }[];
@@ -582,7 +629,7 @@ function FontRow({
 	onFontDelete,
 }: RowComponentProps<FontRowProps>) {
 	const fontName = filteredFonts[index];
-	const entry = atlas.fonts[fontName];
+	const entry = atlas?.fonts[fontName];
 	const isSelected = fontName === selectedFont;
 	const isCustom = customFamilies.has(fontName);
 	const isSystemFont = SYSTEM_FONTS.has(fontName);
@@ -612,8 +659,9 @@ function FontRow({
 			>
 				<div className="min-w-0 overflow-hidden">
 					{/* 本地字体没有预烘的 sprite（那是给 Google 字体批量生成的），
-						直接用这个字体自己写出名字，反而更能看出效果 */}
-					{isSystemFont || isCustom ? (
+						直接用这个字体自己写出名字，反而更能看出效果；atlas 没拉到时
+						也走这条，宁可看到名字也别给一行空白 */}
+					{isSystemFont || isCustom || !entry ? (
 						<span
 							className="text-foreground/85 text-xl"
 							style={{ fontFamily: fontName }}
