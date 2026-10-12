@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 import type { ParamValues } from "@/params";
+import type { ElementAnimations, ScalarChannel } from "@/animation/types";
+import type { MediaTime } from "@/wasm";
 
 /*
  * 文字样式预设：一键带着一整套排版/填充/描边/阴影落进时间轴。
@@ -11,19 +13,42 @@ import type { ParamValues } from "@/params";
  * fontSize 是"画布高 / 90"的倍数（见 text/primitives.ts 的 scaledFontSize），
  * 15 ≈ 1080p 上 180px 高，所以标题/花字类给到 22~26。
  *
- * 花字靠三样东西：color→colorEnd 的竖向渐变填充、stroke + stroke.outer* 两圈描边、
- * 以及 offsetY=0 的阴影（就是发光）。这三个能力都在渲染侧真的采样。
+ * 花字的手段：color→(colorMid)→colorEnd 渐变 + gradientAngle 方向、
+ * stroke + stroke.outer* 两圈描边（内圈自己也能渐变）、extrude 立体挤出、
+ * glow 多层光晕、ghost 故障重影、shadow（offsetY=0 时就是发光）。
+ *
+ * 其中 gradientAngle 和 shadow.blur 是关键帧通道，所以有几套预设**自带关键帧**：
+ * 落进时间轴就在自己动（流光扫过、霓虹呼吸），展开轨道能看到那两条泳道。
  */
 export interface TextPreset {
 	key: string;
 	label: string;
 	content: string;
 	params: ParamValues;
+	animations?: ElementAnimations;
+}
+
+/** 关键帧时间是相对元素起点的 tick；1 秒 = 120000（rust media_time.rs:10） */
+const TICKS_PER_SECOND = 120_000;
+
+function scalarChannel(
+	keys: ReadonlyArray<readonly [seconds: number, value: number]>,
+): ScalarChannel {
+	return {
+		keys: keys.map(([seconds, value], index) => ({
+			id: `preset-key-${index}`,
+			time: Math.round(seconds * TICKS_PER_SECOND) as MediaTime,
+			value,
+			segmentToNext: "linear" as const,
+			tangentMode: "auto" as const,
+		})),
+	};
 }
 
 export const PLACEHOLDER_TEXT = "输入文字";
 
-const glow = (color: string, blur: number): ParamValues => ({
+/** 单层发光：走 shadow（offset 归零）。多层的是 glow.* 那组参数 */
+const softGlow = (color: string, blur: number): ParamValues => ({
 	"shadow.enabled": true,
 	"shadow.color": color,
 	"shadow.blur": blur,
@@ -125,7 +150,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#8FFBFF",
 			"stroke.outerWidth": 5,
-			...glow("#00E5FF", 26),
+			...softGlow("#00E5FF", 26),
 		},
 	},
 	{
@@ -162,7 +187,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#FFFFFF",
 			"stroke.outerWidth": 4,
-			...glow("#FF5722", 20),
+			...softGlow("#FF5722", 20),
 		},
 	},
 	{
@@ -195,7 +220,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 3,
 			"stroke.outerColor": "#39FF14",
 			"stroke.outerWidth": 2,
-			...glow("#39FF14", 22),
+			...softGlow("#39FF14", 22),
 		},
 	},
 	{
@@ -212,7 +237,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#2A0845",
 			"stroke.outerWidth": 4,
-			...glow("#B06CFF", 18),
+			...softGlow("#B06CFF", 18),
 		},
 	},
 	{
@@ -229,7 +254,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 3,
 			"stroke.outerColor": "#1E6FFF",
 			"stroke.outerWidth": 2,
-			...glow("#8FDBFF", 18),
+			...softGlow("#8FDBFF", 18),
 		},
 	},
 	{
@@ -246,7 +271,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#FFD98A",
 			"stroke.outerWidth": 4,
-			...glow("#FF9A3C", 16),
+			...softGlow("#FF9A3C", 16),
 		},
 	},
 
@@ -398,7 +423,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#E8F7F0",
 			"stroke.outerWidth": 2,
-			...glow("#9FE8D2", 14),
+			...softGlow("#9FE8D2", 14),
 		},
 	},
 
@@ -484,7 +509,7 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#29B6F6",
 			"stroke.outerWidth": 2,
-			...glow("#29B6F6", 20),
+			...softGlow("#29B6F6", 20),
 		},
 	},
 	{
@@ -504,7 +529,138 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
 			"stroke.width": 2,
 			"stroke.outerColor": "#FF3FD0",
 			"stroke.outerWidth": 3,
-			...glow("#FF3FD0", 22),
+			...softGlow("#FF3FD0", 22),
+		},
+	},
+	// ---- 招牌款：每一套都占一样别人没有的能力，其中三套自带关键帧 ----
+	{
+		// 角度从 0 转到 360，金光在字上绕一圈 —— 落进时间轴就在自己流
+		key: "flowinggold",
+		label: "Flowing gold",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 26,
+			fontWeight: "bold",
+			letterSpacing: 1,
+			color: "#FFF6C9",
+			colorMid: "#E8B923",
+			colorEnd: "#7A4A00",
+			gradientAngle: 180,
+			"stroke.enabled": true,
+			"stroke.color": "#4A2C00",
+			"stroke.width": 2,
+			"stroke.outerColor": "#FFE9A8",
+			"stroke.outerWidth": 3,
+			"glow.color": "#FFC94D",
+			"glow.width": 10,
+		},
+		animations: { gradientAngle: scalarChannel([[0, 0], [5, 360]]) },
+	},
+	{
+		// shadow.blur 打关键帧：14 ↔ 36 来回，就是霓虹灯在呼吸
+		key: "breathingneon",
+		label: "Breathing neon",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			letterSpacing: 2,
+			color: "#BFFBFF",
+			colorEnd: "#12B7C7",
+			gradientAngle: 180,
+			"stroke.enabled": true,
+			"stroke.color": "#062A38",
+			"stroke.width": 2,
+			"stroke.outerColor": "#7DF9FF",
+			"stroke.outerWidth": 2,
+			"glow.color": "#22D3EE",
+			"glow.width": 14,
+			"shadow.enabled": true,
+			"shadow.color": "#22D3EE",
+			"shadow.blur": 14,
+			"shadow.offsetX": 0,
+			"shadow.offsetY": 0,
+		},
+		animations: {
+			"shadow.blur": scalarChannel([
+				[0, 14],
+				[1.25, 36],
+				[2.5, 14],
+				[3.75, 36],
+				[5, 14],
+			]),
+		},
+	},
+	{
+		key: "rgbglitch",
+		label: "RGB glitch",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 26,
+			fontWeight: "bold",
+			letterSpacing: 3,
+			color: "#FFFFFF",
+			"ghost.leftColor": "#00FFFF",
+			"ghost.rightColor": "#FF005A",
+			"ghost.width": 4,
+		},
+	},
+	{
+		key: "rainbowedge",
+		label: "Rainbow edge",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 24,
+			fontWeight: "bold",
+			color: "#FFFFFF",
+			"stroke.enabled": true,
+			"stroke.color": "#FF3FD0",
+			"stroke.gradientEnd": "#00E5FF",
+			"stroke.width": 6,
+			"stroke.outerColor": "#FFFFFF",
+			"stroke.outerWidth": 3,
+			gradientAngle: 90,
+		},
+	},
+	{
+		// 白文印：红底白字，字距放宽、圆角压小，靠留白而不是靠颜色
+		key: "seal",
+		label: "Seal stamp",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 18,
+			fontWeight: "bold",
+			color: "#FDF6EC",
+			letterSpacing: 6,
+			lineHeight: 1.35,
+			"background.enabled": true,
+			"background.color": "#B3261E",
+			"background.cornerRadius": 14,
+			"background.paddingX": 30,
+			"background.paddingY": 22,
+			"shadow.enabled": true,
+			"shadow.color": "#000000",
+			"shadow.blur": 12,
+			"shadow.offsetY": 6,
+		},
+	},
+	{
+		key: "rubbing",
+		label: "Stone rubbing",
+		content: PLACEHOLDER_TEXT,
+		params: {
+			fontSize: 20,
+			color: "#EFE7D3",
+			colorMid: "#B9AE95",
+			colorEnd: "#6E6656",
+			gradientAngle: 170,
+			letterSpacing: 10,
+			lineHeight: 1.6,
+			"background.enabled": true,
+			"background.color": "#141312",
+			"background.cornerRadius": 0,
+			"background.paddingX": 40,
+			"background.paddingY": 30,
 		},
 	},
 ] as const;
@@ -576,6 +732,24 @@ export function buildPresetPreviewStyle({
 				`${(step * i).toFixed(1)}px ${(step * i).toFixed(1)}px 0 ${color}`,
 			);
 		}
+	}
+	const ghostShift = numberParam("ghost.width", 0);
+	if (ghostShift > 0) {
+		const px = Math.max(0.6, ghostShift * 0.18);
+		shadows.push(
+			`${(-px).toFixed(1)}px 0 0 ${stringParam("ghost.leftColor", "#00FFFF")}`,
+			`${px.toFixed(1)}px 0 0 ${stringParam("ghost.rightColor", "#FF005A")}`,
+		);
+	}
+	const glowSize = numberParam("glow.width", 0);
+	if (glowSize > 0) {
+		// 渲染侧是三层叠模糊，卡片用两层近似的示意同一个方向
+		const blur = Math.max(1.5, glowSize * 0.35);
+		const color = stringParam("glow.color", "#FFFFFF");
+		shadows.push(
+			`0 0 ${blur.toFixed(1)}px ${color}`,
+			`0 0 ${(blur * 2).toFixed(1)}px ${color}`,
+		);
 	}
 	if (flagParam("shadow.enabled")) {
 		const offsetY = numberParam("shadow.offsetY", 0);

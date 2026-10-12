@@ -451,10 +451,16 @@ function resolveTextNode({
 			typeof node.params.params["colorMid"] === "string"
 				? node.params.params["colorMid"]
 				: null,
-		gradientAngle:
-			typeof node.params.params["gradientAngle"] === "number"
-				? node.params.params["gradientAngle"]
-				: 180,
+		// 流光花字靠它动起来：角度是关键帧通道，面板能开、曲线能拖，画面必须跟着转
+		gradientAngle: resolveNumberAtTime({
+			baseValue:
+				typeof node.params.params["gradientAngle"] === "number"
+					? node.params.params["gradientAngle"]
+					: 180,
+			animations: node.params.animations,
+			propertyPath: "gradientAngle",
+			localTime,
+		}),
 		extrude:
 			typeof node.params.params["extrude.width"] === "number" &&
 			node.params.params["extrude.width"] > 0
@@ -464,6 +470,32 @@ function resolveTextNode({
 								? node.params.params["extrude.color"]
 								: "#000000",
 						width: node.params.params["extrude.width"],
+					}
+				: null,
+		glow:
+			typeof node.params.params["glow.width"] === "number" &&
+			node.params.params["glow.width"] > 0
+				? {
+						color:
+							typeof node.params.params["glow.color"] === "string"
+								? node.params.params["glow.color"]
+								: "#ffffff",
+						width: node.params.params["glow.width"],
+					}
+				: null,
+		ghost:
+			typeof node.params.params["ghost.width"] === "number" &&
+			node.params.params["ghost.width"] > 0
+				? {
+						leftColor:
+							typeof node.params.params["ghost.leftColor"] === "string"
+								? node.params.params["ghost.leftColor"]
+								: "#00FFFF",
+						rightColor:
+							typeof node.params.params["ghost.rightColor"] === "string"
+								? node.params.params["ghost.rightColor"]
+								: "#FF005A",
+						width: node.params.params["ghost.width"],
 					}
 				: null,
 		backgroundColor: resolveColorAtTime({
@@ -490,6 +522,10 @@ function resolveTextNode({
 								? node.params.params["stroke.outerColor"]
 								: null,
 						outerWidth: strokeOuterWidth,
+						gradientEnd:
+							typeof node.params.params["stroke.gradientEnd"] === "string"
+								? node.params.params["stroke.gradientEnd"]
+								: null,
 					}
 				: null,
 		shadow: shadowEnabled

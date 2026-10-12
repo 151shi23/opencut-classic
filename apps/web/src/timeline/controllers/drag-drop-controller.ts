@@ -467,6 +467,7 @@ export class DragDropController {
 					...(dragData.params ?? {}),
 					content: dragData.content ?? "",
 				},
+				animations: dragData.animations,
 			},
 			startTime: target.xPosition,
 		});

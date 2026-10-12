@@ -118,6 +118,9 @@ export function buildTextElement({
 			...buildDefaultElementParams({ type: "text" }),
 			...(t.params ?? {}),
 		},
+		// 样式预设可以自带关键帧（流光、呼吸霓虹），以前这里整份丢掉，
+		// 于是"会动的花字"落进时间轴变成静止的
+		...(t.animations ? { animations: t.animations } : {}),
 	};
 }
 

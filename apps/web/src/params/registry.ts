@@ -219,15 +219,15 @@ const textElementParams: ElementParamDefinition[] = [
 		keyframable: false,
 	},
 	{
-		// CSS 角度约定：0=下往上，90=左往右，180=上往下
+		// CSS 角度约定：0=下往上，90=左往右，180=上往下。
+		// 这条**可以打关键帧**：角度动起来就是"流光扫过"，预设里有现成的例子
 		key: "gradientAngle",
 		label: "Gradient angle",
 		type: "number",
 		default: 180,
 		min: 0,
 		max: 360,
-		step: 15,
-		keyframable: false,
+		step: 5,
 	},
 	{
 		key: "textAlign",
@@ -413,6 +413,16 @@ const textElementParams: ElementParamDefinition[] = [
 		group: "stroke",
 		dependencies: [{ param: "stroke.enabled", equals: true }],
 	},
+	{
+		// 内圈描边自己也走渐变（和填充同一个角度），彩虹边/鎏金边靠它
+		key: "stroke.gradientEnd",
+		label: "Stroke gradient end",
+		type: "color",
+		default: "#000000",
+		keyframable: false,
+		group: "stroke",
+		dependencies: [{ param: "stroke.enabled", equals: true }],
+	},
 	// ---- 安卓移植新增：文字阴影（剪映同款）----
 	{
 		key: "shadow.enabled",
@@ -484,6 +494,55 @@ const textElementParams: ElementParamDefinition[] = [
 		step: 1,
 		keyframable: false,
 		group: "extrude",
+	},
+	// ---- 花字新增：多层光晕与故障重影 ----
+	{
+		key: "glow.color",
+		label: "Glow color",
+		type: "color",
+		default: "#FFFFFF",
+		keyframable: false,
+		group: "glow",
+	},
+	{
+		key: "glow.width",
+		label: "Glow size",
+		type: "number",
+		// 占字号的百分比；渲染侧分三层把模糊叠厚
+		default: 0,
+		min: 0,
+		max: 100,
+		step: 1,
+		keyframable: false,
+		group: "glow",
+	},
+	{
+		key: "ghost.leftColor",
+		label: "Ghost left color",
+		type: "color",
+		default: "#00FFFF",
+		keyframable: false,
+		group: "ghost",
+	},
+	{
+		key: "ghost.rightColor",
+		label: "Ghost right color",
+		type: "color",
+		default: "#FF005A",
+		keyframable: false,
+		group: "ghost",
+	},
+	{
+		key: "ghost.width",
+		label: "Ghost offset",
+		type: "number",
+		// 占字号的百分比，左右各偏这么多
+		default: 0,
+		min: 0,
+		max: 40,
+		step: 1,
+		keyframable: false,
+		group: "ghost",
 	},
 ];
 

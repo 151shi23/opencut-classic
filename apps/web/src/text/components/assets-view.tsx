@@ -29,6 +29,8 @@ export function TextView() {
 					...preset.params,
 					content: preset.content,
 				},
+				// 招牌款自带关键帧，落进时间轴就在自己动
+				animations: preset.animations,
 			},
 			startTime: currentTime,
 		});
@@ -67,6 +69,7 @@ export function TextView() {
 							name: preset.label,
 							content: preset.content,
 							params: preset.params,
+							animations: preset.animations,
 						}}
 						aspectRatio={1}
 						onAddToTimeline={({ currentTime }) =>

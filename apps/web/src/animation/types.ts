@@ -24,6 +24,8 @@ export const ANIMATION_PROPERTY_PATHS = [
 	"fontSize",
 	"letterSpacing",
 	"lineHeight",
+	// 流光花字：角度动起来，渐变就在字上扫过去
+	"gradientAngle",
 	"stroke.width",
 	"shadow.blur",
 	"shadow.offsetX",

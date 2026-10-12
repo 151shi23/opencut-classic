@@ -23,6 +23,8 @@ export interface ResolvedTextStroke {
 	/** 花字用的第二圈描边，画在 width 之外 */
 	outerColor?: string | null;
 	outerWidth?: number;
+	/** 描边也走渐变时的那个端色 */
+	gradientEnd?: string | null;
 }
 
 export interface ResolvedTextShadow {
@@ -44,6 +46,10 @@ export interface ResolvedTextNodeState {
 	gradientAngle: number;
 	/** 立体挤出（3D 字）；null = 不挤出 */
 	extrude: { color: string; width: number } | null;
+	/** 多层光晕（霓虹）；null = 不发光 */
+	glow: { color: string; width: number } | null;
+	/** 故障重影；null = 不重影 */
+	ghost: { leftColor: string; rightColor: string; width: number } | null;
 	backgroundColor: string;
 	stroke: ResolvedTextStroke | null;
 	shadow: ResolvedTextShadow | null;
@@ -85,6 +91,8 @@ export function renderTextToContext({
 		textColorMid: resolved.textColorMid,
 		gradientAngle: resolved.gradientAngle,
 		extrude: resolved.extrude,
+		glow: resolved.glow,
+		ghost: resolved.ghost,
 		background: resolved.measuredText.resolvedBackground,
 		backgroundColor: resolved.backgroundColor,
 		stroke: resolved.stroke,

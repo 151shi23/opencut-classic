@@ -4,7 +4,7 @@ import { clamp, snapToStep } from "@/utils/math";
 export type ParamValue = number | string | boolean;
 export type ParamValues = Record<string, ParamValue>;
 
-export type ParamGroup = "stroke" | "shadow" | "extrude";
+export type ParamGroup = "stroke" | "shadow" | "extrude" | "glow" | "ghost";
 
 export type ChannelValueKind = "scalar" | "discrete";
 export type ChannelEasingMode = "independent" | "shared";

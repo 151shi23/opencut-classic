@@ -1,5 +1,6 @@
 import type { MaskableElement, VisualElement } from "./types";
 import type { ParamValues } from "@/params";
+import type { ElementAnimations } from "@/animation/types";
 
 interface BaseDragData {
 	id: string;
@@ -17,6 +18,8 @@ export interface TextDragData extends BaseDragData {
 	content: string;
 	/** 样式预设带过来的参数覆盖；不填就是普通默认文字 */
 	params?: ParamValues;
+	/** 预设自带的关键帧（流光、呼吸霓虹），拖进来也要保住 */
+	animations?: ElementAnimations;
 }
 
 export interface StickerDragData extends BaseDragData {

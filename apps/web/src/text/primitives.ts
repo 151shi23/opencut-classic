@@ -169,31 +169,36 @@ export function measureTextLayout({
  * 角度用 CSS 的约定：0deg 从下往上、90deg 从左往右、180deg 从上往下（默认）。
  * 渐变线取字形盒在该方向上的投影，所以 45° 之类的斜向也是"贴着字"走而不是贴着画面。
  */
-function buildLineFillStyle({
+/**
+ * 按 CSS 角度约定铺一条贴着字形盒的线性渐变：0deg 下往上、90deg 左往右、
+ * 180deg 上往下。渐变线取字形盒在该方向上的投影，所以斜向也是"贴着字"走。
+ * 填充和描边共用它 —— 渐变描边就是把 start/end 换成描边色。
+ */
+function buildAngleGradient({
 	ctx,
 	layout,
-	textColor,
-	textColorEnd,
-	textColorMid,
-	gradientAngle,
+	start,
+	mid,
+	end,
+	angle,
 	lineY,
 	lineWidth,
 }: {
 	ctx: TextCanvasContext;
 	layout: MeasuredTextLayout;
-	textColor: string;
-	textColorEnd?: string | null;
-	textColorMid?: string | null;
-	gradientAngle?: number;
+	start: string;
+	mid?: string | null;
+	end?: string | null;
+	angle?: number;
 	lineY: number;
 	lineWidth: number;
 }): string | CanvasGradient {
-	if (!textColorEnd || textColorEnd === textColor) {
-		return textColor;
+	if (!end || end === start) {
+		return start;
 	}
 	const halfHeight = layout.scaledFontSize * 0.55;
 	const halfWidth = Math.max(lineWidth, halfHeight * 2) / 2;
-	const theta = ((gradientAngle ?? 180) * Math.PI) / 180;
+	const theta = ((angle ?? 180) * Math.PI) / 180;
 	const dx = Math.sin(theta);
 	const dy = -Math.cos(theta);
 	const centerX =
@@ -209,11 +214,11 @@ function buildLineFillStyle({
 		centerX + dx * span,
 		lineY + dy * span,
 	);
-	gradient.addColorStop(0, textColor);
-	if (textColorMid && textColorMid !== textColor && textColorMid !== textColorEnd) {
-		gradient.addColorStop(0.5, textColorMid);
+	gradient.addColorStop(0, start);
+	if (mid && mid !== start && mid !== end) {
+		gradient.addColorStop(0.5, mid);
 	}
-	gradient.addColorStop(1, textColorEnd);
+	gradient.addColorStop(1, end);
 	return gradient;
 }
 
@@ -225,6 +230,8 @@ export function drawMeasuredTextLayout({
 	textColorMid,
 	gradientAngle,
 	extrude,
+	glow,
+	ghost,
 	background,
 	backgroundColor,
 	stroke,
@@ -242,6 +249,10 @@ export function drawMeasuredTextLayout({
 	gradientAngle?: number;
 	/** 立体挤出：沿右下方向叠若干层同色文字，画在描边之前 */
 	extrude?: { color: string; width: number } | null;
+	/** 真·光晕：分几层把模糊叠出来，比单发 shadowBlur 厚得多 */
+	glow?: { color: string; width: number } | null;
+	/** 故障重影：左右各偏一格的异色副本，垫在主字下面 */
+	ghost?: { leftColor: string; rightColor: string; width: number } | null;
 	background?: ResolvedTextBackgroundLike | null;
 	backgroundColor?: string;
 	stroke?: {
@@ -250,6 +261,8 @@ export function drawMeasuredTextLayout({
 		outerColor?: string | null;
 		/** 外圈描边的可见厚度：画在 `width` 之外，所以线宽是 width + 2×outerWidth */
 		outerWidth?: number;
+		/** 描边也走渐变（和填充同一个角度） */
+		gradientEnd?: string | null;
 	} | null;
 	shadow?: {
 		color: string;
@@ -333,6 +346,35 @@ export function drawMeasuredTextLayout({
 	for (let index = 0; index < layout.lines.length; index++) {
 		const lineY = index * layout.lineHeightPx - layout.block.visualCenterOffset;
 		const lineWidth = layout.lineMetrics[index]?.width ?? 0;
+		if (ghost && ghost.width > 0) {
+			// 故障重影：左右各偏一格的异色副本，垫在主字下面露出两道边
+			if (shadow) hideShadow();
+			const shift = (ghost.width / 100) * layout.scaledFontSize;
+			ctx.fillStyle = ghost.leftColor;
+			ctx.fillText(layout.lines[index], -shift, lineY);
+			ctx.fillStyle = ghost.rightColor;
+			ctx.fillText(layout.lines[index], shift, lineY);
+			if (shadow) showShadow();
+		}
+		if (glow && glow.width > 0) {
+			/*
+			 * 光晕分三层叠出来：canvas 一次 shadowBlur 只有一层薄光，
+			 * 由远及近叠三层才是霓虹灯管那种厚度。半径按字号百分比，
+			 * 和立体挤出一样，不能按像素 —— 否则换分辨率就变味。
+			 */
+			const radius = (glow.width / 100) * layout.scaledFontSize;
+			ctx.shadowColor = glow.color;
+			ctx.shadowOffsetX = 0;
+			ctx.shadowOffsetY = 0;
+			ctx.fillStyle = glow.color;
+			for (const factor of [1, 0.6, 0.3]) {
+				ctx.shadowBlur = radius * factor;
+				ctx.fillText(layout.lines[index], 0, lineY);
+			}
+			ctx.shadowBlur = 0;
+			ctx.shadowColor = "transparent";
+			if (shadow) showShadow();
+		}
 		if (extrude && extrude.width > 0) {
 			/*
 			 * 立体字：沿右下方向叠若干层实心副本，最远的先画。
@@ -369,19 +411,27 @@ export function drawMeasuredTextLayout({
 				ctx.strokeText(layout.lines[index], 0, lineY);
 			}
 			if (innerStrokeWidth > 0) {
-				ctx.strokeStyle = stroke.color;
+				ctx.strokeStyle = buildAngleGradient({
+					ctx,
+					layout,
+					start: stroke.color,
+					end: stroke.gradientEnd,
+					angle: gradientAngle,
+					lineY,
+					lineWidth,
+				});
 				ctx.lineWidth = innerStrokeWidth;
 				ctx.strokeText(layout.lines[index], 0, lineY);
 			}
 			if (shadow) showShadow();
 		}
-		ctx.fillStyle = buildLineFillStyle({
+		ctx.fillStyle = buildAngleGradient({
 			ctx,
 			layout,
-			textColor,
-			textColorEnd,
-			textColorMid,
-			gradientAngle,
+			start: textColor,
+			mid: textColorMid,
+			end: textColorEnd,
+			angle: gradientAngle,
 			lineY,
 			lineWidth,
 		});
