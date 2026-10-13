@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { ParamValues } from "@/params";
+import type { ParamDefinition, ParamValue, ParamValues } from "@/params";
 import type { Effect } from "@/effects/types";
-import type { EffectElement, VisualElement } from "@/timeline";
+import type { EffectElement, TimelineElement, VisualElement } from "@/timeline";
 import { effectsRegistry } from "@/effects";
 import { useEditor } from "@/editor/use-editor";
 import { useElementPreview } from "@/timeline/hooks/use-element-preview";
+import {
+	buildEffectParamPath,
+	resolveAnimationPathValueAtTime,
+} from "@/animation";
+import { useElementPlayhead } from "@/components/editor/panels/properties/hooks/use-element-playhead";
+import { useKeyframedParamProperty } from "@/components/editor/panels/properties/hooks/use-keyframed-param-property";
 import {
 	Section,
 	SectionContent,
@@ -47,11 +53,15 @@ export function StandaloneEffectTab({
 		enabled: true,
 	};
 
-	const previewParam = (key: string) => (value: number | string | boolean) => {
-		previewUpdates({
-			params: { ...(renderElement as EffectElement).params, [key]: value },
-		});
-	};
+	const buildUpdates = ({
+		key,
+		value,
+	}: {
+		key: string;
+		value: ParamValue;
+	}): Partial<TimelineElement> => ({
+		params: { ...(renderElement as EffectElement).params, [key]: value },
+	});
 
 	return (
 		<div className="flex flex-col h-full">
@@ -60,8 +70,10 @@ export function StandaloneEffectTab({
 			</div>
 			<EffectSection
 				effect={effect}
+				element={element}
+				trackId={trackId}
 				renderParams={(renderElement as EffectElement).params}
-				previewParam={previewParam}
+				buildUpdates={buildUpdates}
 				onCommit={commit}
 			/>
 		</div>
@@ -95,10 +107,15 @@ export function ClipEffectsTab({
 		);
 	};
 
-	const buildPreviewParam =
+	const buildUpdates =
 		(effectId: string) =>
-		(key: string) =>
-		(value: number | string | boolean) => {
+		({
+			key,
+			value,
+		}: {
+			key: string;
+			value: ParamValue;
+		}): Partial<TimelineElement> => {
 			const updatedEffects = (
 				(renderElement as VisualElement).effects ?? []
 			).map((existing) =>
@@ -106,7 +123,7 @@ export function ClipEffectsTab({
 					? existing
 					: { ...existing, params: { ...existing.params, [key]: value } },
 			);
-			previewUpdates({ effects: updatedEffects });
+			return { effects: updatedEffects };
 		};
 
 	const handleDragStart = ({ index }: { index: number }) => setDragIndex(index);
@@ -176,8 +193,10 @@ export function ClipEffectsTab({
 							>
 								<EffectSection
 									effect={effect}
+									element={element}
+									trackId={trackId}
 									renderParams={getRenderParams({ effectId: effect.id })}
-									previewParam={buildPreviewParam(effect.id)}
+									buildUpdates={buildUpdates(effect.id)}
 									onCommit={commit}
 									onToggle={() =>
 										editor.timeline.toggleClipEffect({
@@ -232,15 +251,25 @@ function EmptyView() {
 
 function EffectSection({
 	effect,
+	element,
+	trackId,
 	renderParams,
-	previewParam,
+	buildUpdates,
 	onCommit,
 	onToggle,
 	onRemove,
 }: {
 	effect: Effect;
+	element: TimelineElement;
+	trackId: string;
 	renderParams: ParamValues;
-	previewParam: (key: string) => (value: number | string | boolean) => void;
+	buildUpdates: ({
+		key,
+		value,
+	}: {
+		key: string;
+		value: ParamValue;
+	}) => Partial<TimelineElement>;
 	onCommit: () => void;
 	onToggle?: () => void;
 	onRemove?: () => void;
@@ -294,20 +323,99 @@ function EffectSection({
 			>
 				<SectionFields>
 					{definition.params.map((param) => (
-						<div key={param.key} className="flex flex-col gap-3.5">
-							<div className="px-4">
-								<PropertyParamField
-									param={param}
-									value={renderParams[param.key] ?? param.default}
-									onPreview={previewParam(param.key)}
-									onCommit={onCommit}
-								/>
-							</div>
-							<Separator />
-						</div>
+						<EffectParamRow
+							key={param.key}
+							param={param}
+							element={element}
+							trackId={trackId}
+							effectId={effect.id}
+							baseValue={renderParams[param.key] ?? param.default}
+							buildUpdates={buildUpdates}
+							onCommit={onCommit}
+						/>
 					))}
 				</SectionFields>
 			</SectionContent>
 		</Section>
+	);
+}
+
+/**
+ * 特效参数的一行。挂上和其它属性同一套关键帧机制：
+ * 路径是 `effects.<effectId>.params.<key>`，写入走 useKeyframedParamProperty，
+ * 所以拖动滑杆会自动在当前时刻补点，时间轴泳道和曲线编辑器也都认这条通道。
+ */
+function EffectParamRow({
+	param,
+	element,
+	trackId,
+	effectId,
+	baseValue,
+	buildUpdates,
+	onCommit,
+}: {
+	param: ParamDefinition;
+	element: TimelineElement;
+	trackId: string;
+	effectId: string;
+	baseValue: ParamValue;
+	buildUpdates: ({
+		key,
+		value,
+	}: {
+		key: string;
+		value: ParamValue;
+	}) => Partial<TimelineElement>;
+	onCommit: () => void;
+}) {
+	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
+		startTime: element.startTime,
+		duration: element.duration,
+	});
+	const propertyPath = buildEffectParamPath({
+		effectId,
+		paramKey: param.key,
+	});
+	const resolvedValue = resolveAnimationPathValueAtTime({
+		animations: element.animations,
+		propertyPath,
+		localTime,
+		fallbackValue: baseValue,
+	});
+	const animated = useKeyframedParamProperty({
+		param,
+		trackId,
+		elementId: element.id,
+		animations: element.animations,
+		propertyPath,
+		localTime,
+		isPlayheadWithinElementRange,
+		resolvedValue,
+		buildBaseUpdates: ({ value }) => buildUpdates({ key: param.key, value }),
+	});
+	// 只有数值参数给关键帧：颜色和开关做插值没有意义，别造"能开不能读"的死通道
+	const canKeyframe = param.type === "number" && param.keyframable !== false;
+
+	return (
+		<div className="flex flex-col gap-3.5">
+			<div className="px-4">
+				<PropertyParamField
+					param={param}
+					value={resolvedValue}
+					onPreview={animated.onPreview}
+					onCommit={animated.onCommit}
+					keyframe={
+						canKeyframe
+							? {
+									isActive: animated.isKeyframedAtTime,
+									isDisabled: !isPlayheadWithinElementRange,
+									onToggle: animated.toggleKeyframe,
+								}
+							: undefined
+					}
+				/>
+			</div>
+			<Separator />
+		</div>
 	);
 }

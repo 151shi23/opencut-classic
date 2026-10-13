@@ -678,7 +678,17 @@ function resolveEffectLayerNode({
 	const definition = effectsRegistry.get(node.params.effectType);
 	const passes = resolveEffectPasses({
 		definition,
-		effectParams: node.params.effectParams,
+		/*
+		 * 独立特效层以前直接吃原始参数：面板能开关键帧、时间轴上也写得出通道，
+		 * 画面却一动不动。贴在素材上的特效走的是 resolveElementEffects，
+		 * 那边一直在采样 —— 两条路现在用同一个函数。
+		 */
+		effectParams: resolveEffectParamsAtTime({
+			effectId: node.params.effectId,
+			params: node.params.effectParams,
+			animations: node.params.animations,
+			localTime: Math.max(0, time - node.params.timeOffset),
+		}),
 		width: context.renderer.width,
 		height: context.renderer.height,
 	});
