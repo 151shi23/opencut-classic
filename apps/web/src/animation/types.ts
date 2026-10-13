@@ -35,6 +35,7 @@ export const ANIMATION_PROPERTY_PATHS = [
 export type AnimationPropertyPath = (typeof ANIMATION_PROPERTY_PATHS)[number];
 export type GraphicParamPath = `params.${string}`;
 export type EffectParamPath = `effects.${string}.params.${string}`;
+export type MaskParamPath = `masks.${string}.params.${string}`;
 export type AnimationPath = string;
 
 export const ANIMATION_PROPERTY_GROUPS = {

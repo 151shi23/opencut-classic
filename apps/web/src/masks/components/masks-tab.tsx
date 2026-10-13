@@ -2,7 +2,13 @@
 
 import type { MaskableElement } from "@/timeline";
 import type { Mask, MaskType, TextMask } from "@/masks/types";
-import type { NumberParamDefinition, SelectParamDefinition } from "@/params";
+import type {
+	NumberParamDefinition,
+	ParamValue,
+	ParamValues,
+	SelectParamDefinition,
+} from "@/params";
+import type { TimelineElement } from "@/timeline";
 import {
 	buildDefaultMaskInstance,
 	getMaskDefinition,
@@ -21,7 +27,12 @@ import {
 	RotateClockwiseIcon,
 	TextFontIcon,
 } from "@hugeicons/core-free-icons";
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState, createContext } from "react";
+import { buildMaskParamPath, resolveMaskParamsAtTime } from "@/animation/mask-param-channel";
+import { useKeyframedParamProperty } from "@/components/editor/panels/properties/hooks/use-keyframed-param-property";
+import { useElementPlayhead } from "@/components/editor/panels/properties/hooks/use-element-playhead";
+import { KeyframeToggle } from "@/components/editor/panels/properties/components/keyframe-toggle";
+import type { MediaTime } from "@/wasm";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { FontPicker } from "@/components/ui/font-picker";
@@ -73,13 +84,39 @@ type MasksTabProps = {
 	trackId: string;
 };
 
+type MaskUpdatesBuilder = ({
+	key,
+	value,
+}: {
+	key: string;
+	value: ParamValue;
+}) => Partial<TimelineElement>;
+
 type MaskItemProps = {
 	trackId: string;
+	element: MaskableElement;
 	elementId: string;
 	mask: Mask;
+	buildUpdates: MaskUpdatesBuilder;
 	previewParam: (key: string) => (value: number | string | boolean) => void;
 	onCommit: () => void;
 };
+
+/**
+ * 遮罩数值参数从这里拿到"该往哪条关键帧通道写"。
+ * 用 context 而不是给每个字段加 prop：这个面板里 MaskNumberField 有十几个调用点，
+ * 逐个改既啰嗦又容易漏掉一两个 —— 漏掉的那几个就会变成"能显示不能动画"。
+ */
+type MaskKeyframeScope = {
+	element: MaskableElement;
+	trackId: string;
+	maskId: string;
+	localTime: MediaTime;
+	isPlayheadWithinElementRange: boolean;
+	buildUpdates: MaskUpdatesBuilder;
+};
+
+const MaskKeyframeScopeContext = createContext<MaskKeyframeScope | null>(null);
 
 type EmptyViewProps = {
 	onAddMask: () => void;
@@ -309,8 +346,20 @@ export function MasksTab({ element, trackId }: MasksTabProps) {
 					<MaskItem
 						key={mask.id}
 						trackId={trackId}
+						element={element}
 						elementId={element.id}
 						mask={renderMasks[index] ?? mask}
+						buildUpdates={({ key, value }) => ({
+							masks: renderMasks.map((existingMask, maskIndex) =>
+								maskIndex !== index
+									? existingMask
+									: withPreviewedMaskParam({
+											mask: existingMask,
+											key,
+											value,
+										}),
+							),
+						})}
 						previewParam={(paramKey) =>
 							previewMaskParam({ index, key: paramKey })
 						}
@@ -324,15 +373,43 @@ export function MasksTab({ element, trackId }: MasksTabProps) {
 
 function MaskItem({
 	trackId,
+	element,
 	elementId,
 	mask,
+	buildUpdates,
 	previewParam,
 	onCommit,
 }: MaskItemProps) {
 	const editor = useEditor();
 	const definition = getMaskDefinition(mask.type);
+	const { localTime, isPlayheadWithinElementRange } = useElementPlayhead({
+		startTime: element.startTime,
+		duration: element.duration,
+	});
+	/*
+	 * 面板显示"这一帧真正生效的参数"，和渲染端 buildMaskArtifacts 用同一个解析函数。
+	 * 否则动画播到一半，滑杆还停在基准值上 —— 用户一拖就把动画改了。
+	 */
+	const animatedMask = {
+		...mask,
+		params: resolveMaskParamsAtTime({
+			maskId: mask.id,
+			params: mask.params as unknown as ParamValues,
+			animations: element.animations,
+			localTime,
+		}),
+	} as unknown as Mask;
+	const scope: MaskKeyframeScope = {
+		element,
+		trackId,
+		maskId: mask.id,
+		localTime,
+		isPlayheadWithinElementRange,
+		buildUpdates,
+	};
 
 	return (
+		<MaskKeyframeScopeContext.Provider value={scope}>
 		<Section sectionKey={`mask-item:${mask.id}`} showTopBorder={false}>
 			<SectionHeader
 				trailing={
@@ -379,13 +456,14 @@ function MaskItem({
 			</SectionHeader>
 			<SectionContent>
 				<MaskParamsFields
-					mask={mask}
+					mask={animatedMask}
 					definition={definition}
 					previewParam={previewParam}
 					onCommit={onCommit}
 				/>
 			</SectionContent>
 		</Section>
+		</MaskKeyframeScopeContext.Provider>
 	);
 }
 
@@ -780,6 +858,28 @@ function MaskNumberField({
 	icon?: React.ReactNode;
 	className?: string;
 }) {
+	/*
+	 * 有 scope（= 这个字段在遮罩面板里）就走和其它属性完全同一套关键帧机制：
+	 * 菱形在当前时刻打点，已有通道时拖滑杆会自动补点。
+	 */
+	const scope = useContext(MaskKeyframeScopeContext);
+	const animated = useKeyframedParamProperty({
+		param,
+		trackId: scope?.trackId ?? "",
+		elementId: scope?.element.id ?? "",
+		animations: scope?.element.animations,
+		propertyPath: scope
+			? buildMaskParamPath({ maskId: scope.maskId, paramKey: param.key })
+			: undefined,
+		localTime: (scope?.localTime ?? 0) as MediaTime,
+		isPlayheadWithinElementRange: scope?.isPlayheadWithinElementRange ?? false,
+		resolvedValue: value,
+		buildBaseUpdates: ({ value: nextValue }) =>
+			scope?.buildUpdates({ key: param.key, value: nextValue }) ?? {},
+	});
+	const previewValue = scope ? animated.onPreview : onPreview;
+	const commitValue = scope ? animated.onCommit : onCommit;
+
 	const isPercent = param.unit === "percent";
 	const percentMax = param.max ?? 100;
 	const displayMultiplier = isPercent
@@ -797,7 +897,7 @@ function MaskNumberField({
 			: Math.max(min, nextDisplayValue);
 
 	const previewFromDisplay = (nextDisplayValue: number) => {
-		onPreview(
+		previewValue(
 			clampDisplay(snapToStep({ value: nextDisplayValue, step })) /
 				displayMultiplier,
 		);
@@ -815,13 +915,13 @@ function MaskNumberField({
 				clampDisplay(snapToStep({ value: parsed, step })) / displayMultiplier
 			);
 		},
-		onPreview,
-		onCommit,
+		onPreview: previewValue,
+		onCommit: commitValue,
 	});
 
-	return (
+	const field = (
 		<NumberField
-			className={className}
+			className={scope ? "min-w-0 flex-1" : className}
 			icon={icon}
 			value={draft.displayValue}
 			dragSensitivity="slow"
@@ -829,8 +929,24 @@ function MaskNumberField({
 			onChange={draft.onChange}
 			onBlur={draft.onBlur}
 			onScrub={previewFromDisplay}
-			onScrubEnd={onCommit}
+			onScrubEnd={commitValue}
 		/>
+	);
+
+	if (!scope) {
+		return field;
+	}
+
+	return (
+		<div className={cn("flex w-full items-center gap-1", className)}>
+			{field}
+			<KeyframeToggle
+				isActive={animated.isKeyframedAtTime}
+				isDisabled={!scope.isPlayheadWithinElementRange}
+				title={`Toggle ${param.label} keyframe`}
+				onToggle={animated.toggleKeyframe}
+			/>
+		</div>
 	);
 }
 

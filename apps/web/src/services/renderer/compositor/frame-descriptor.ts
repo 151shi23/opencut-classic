@@ -1,5 +1,7 @@
 import { drawCssBackground } from "@/gradients";
 import { getMaskDefinition } from "@/masks";
+import { resolveMaskParamsAtTime } from "@/animation/mask-param-channel";
+import type { ParamValues } from "@/params";
 import { incrementCounter } from "@/diagnostics/render-perf";
 import type { AnyBaseNode } from "../nodes/base-node";
 import type { CanvasRenderer } from "../canvas-renderer";
@@ -261,6 +263,7 @@ async function collectVisualSourceNode({
 		path,
 		transform,
 		textures,
+		localTime: node.resolved.localTime,
 	});
 
 	items.push({
@@ -377,20 +380,37 @@ function buildMaskArtifacts({
 	path,
 	transform,
 	textures,
+	localTime,
 }: {
 	node: VideoNode | ImageNode | StickerNode | GraphicNode;
 	renderer: CanvasRenderer;
 	path: string;
 	transform: QuadTransformDescriptor;
 	textures: Map<string, TextureUploadDescriptor>;
+	localTime: number;
 }): {
 	mask: LayerMaskDescriptor | null;
 	strokeLayer: FrameItemDescriptor | null;
 } {
-	const mask = node.params.masks?.[0];
-	if (!mask) {
+	const rawMask = node.params.masks?.[0];
+	if (!rawMask) {
 		return { mask: null, strokeLayer: null };
 	}
+
+	/*
+	 * 遮罩参数也要吃关键帧，否则"擦除 / 显现"这类动画根本做不出来。
+	 * 没有动画时 resolveMaskParamsAtTime 原样返回同一个对象引用，
+	 * 下面的 maskContentHash 因此完全不变 —— 静态遮罩不会被逼着逐帧重画。
+	 */
+	const mask = {
+		...rawMask,
+		params: resolveMaskParamsAtTime({
+			maskId: rawMask.id,
+			params: rawMask.params as unknown as ParamValues,
+			animations: node.params.animations,
+			localTime,
+		}) as unknown as typeof rawMask.params,
+	};
 
 	const definition = getMaskDefinition(mask.type);
 

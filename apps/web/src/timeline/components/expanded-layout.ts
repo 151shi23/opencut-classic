@@ -32,6 +32,7 @@ const PROPERTY_GROUPS: PropertyGroupDefinition[] = [
 	{ matchesPath: (path) => path === "volume" || path === "color" },
 	{ matchesPath: (path) => path.startsWith("background.") },
 	{ matchesPath: (path) => ANIMATED_TEXT_PATHS.has(path) },
+	{ matchesPath: (path) => path.startsWith("masks.") },
 	{ matchesPath: (path) => path.startsWith("params.") },
 	{ matchesPath: (path) => path.startsWith("effects.") },
 ];
@@ -64,6 +65,12 @@ const PROPERTY_LABELS: Partial<Record<string, string>> = {
 export function getPropertyLabel(path: AnimationPath): string {
 	if (PROPERTY_LABELS[path]) return PROPERTY_LABELS[path];
 	if (path.startsWith("params.")) return path.slice("params.".length);
+	if (path.startsWith("masks.")) {
+		// 路径里带的是 maskId（uuid），能看懂的只有最后那段参数名；
+		// 首字母大写后正好对上遮罩面板那份标签，汉化表也按整句能查到
+		const key = path.slice(path.lastIndexOf(".") + 1);
+		return key.charAt(0).toUpperCase() + key.slice(1);
+	}
 	if (path.startsWith("effects.")) {
 		const parts = path.split(".");
 		return parts[parts.length - 1];

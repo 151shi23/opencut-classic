@@ -16,6 +16,14 @@ import type { SelectedMaskPointSelection } from "@/selection/editor-selection";
 import type { Mask, MaskHandleId, MaskInteractionResult } from "@/masks/types";
 import type { MaskableElement } from "@/timeline";
 import { isMaskableElement } from "@/timeline/element-utils";
+import { getElementLocalTime, upsertPathKeyframe } from "@/animation";
+import { buildMaskParamPath } from "@/animation/mask-param-channel";
+import {
+	coerceParamValue,
+	getParamChannelLayout,
+	type ParamValues,
+} from "@/params";
+import { mediaTime } from "@/wasm";
 import { registerCanceller } from "@/editor/cancel-interaction";
 
 interface DragState {
@@ -572,12 +580,45 @@ export function useMaskHandles({
 				mask: selectedWithMask.mask,
 				params: nextParams as typeof selectedWithMask.mask.params,
 			});
+			/*
+			 * 这条参数如果被关键帧驱动，就必须同时写进通道 —— 通道会盖住基础参数，
+			 * 只改基础值的话手柄看起来"拖不动"。和属性面板一样走 preview，
+			 * 提交时合成一条撤销记录，不会每帧留一条。
+			 */
+			const maskId = selectedWithMask.mask.id;
+			const localTime = mediaTime({
+				ticks: getElementLocalTime({
+					timelineTime: currentTime,
+					elementStartTime: selectedWithMask.element.startTime,
+					elementDuration: selectedWithMask.element.duration,
+				}),
+			});
+			let nextAnimations = selectedWithMask.element.animations;
+			for (const key of Object.keys(rawParams)) {
+				const propertyPath = buildMaskParamPath({ maskId, paramKey: key });
+				if (!nextAnimations?.[propertyPath]) {
+					continue;
+				}
+				const param = def.params.find((candidate) => candidate.key === key);
+				if (!param) {
+					continue;
+				}
+				nextAnimations = upsertPathKeyframe({
+					animations: nextAnimations,
+					propertyPath,
+					time: localTime,
+					value: (nextParams as unknown as ParamValues)[key],
+					channelLayout: getParamChannelLayout({ param }),
+					coerceValue: ({ value }) => coerceParamValue({ param, value }),
+				});
+			}
 			editor.timeline.previewElements({
 				updates: [
 					{
 						trackId: drag.trackId,
 						elementId: drag.elementId,
 						updates: {
+							animations: nextAnimations,
 							masks: replaceElementMask({
 								masks: selectedWithMask.element.masks,
 								updatedMask,
@@ -588,6 +629,7 @@ export function useMaskHandles({
 			});
 		},
 		[
+			currentTime,
 			selectedWithMask,
 			canvasSize,
 			editor,

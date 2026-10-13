@@ -59,6 +59,14 @@ export {
 } from "./effect-param-channel";
 
 export {
+	buildMaskParamPath,
+	isMaskParamPath,
+	parseMaskParamPath,
+	removeMaskParamKeyframe,
+	resolveMaskParamsAtTime,
+} from "./mask-param-channel";
+
+export {
 	getGroupKeyframesAtTime,
 	hasGroupKeyframeAtTime,
 	type GroupKeyframeRef,

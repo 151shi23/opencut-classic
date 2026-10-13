@@ -5,7 +5,9 @@ import type {
 } from "@/animation/types";
 import { parseEffectParamPath } from "@/animation/effect-param-channel";
 import { parseGraphicParamPath } from "@/animation/graphic-param-channel";
+import { parseMaskParamPath } from "@/animation/mask-param-channel";
 import { effectsRegistry, registerDefaultEffects } from "@/effects";
+import { masksRegistry, registerDefaultMasks } from "@/masks";
 import { getGraphicDefinition } from "@/graphics";
 import {
 	coerceParamValue,
@@ -19,7 +21,7 @@ import {
 } from "@/params";
 import { getElementParam } from "@/params/registry";
 import type { TimelineElement } from "@/timeline";
-import { isVisualElement } from "@/timeline/element-utils";
+import { isMaskableElement, isVisualElement } from "@/timeline/element-utils";
 
 export interface AnimationPathDescriptor {
 	channelLayout: ParamChannelLayout;
@@ -177,6 +179,56 @@ function buildEffectParamDescriptor({
 	});
 }
 
+/**
+ * 遮罩参数：`masks.<maskId>.params.<key>`。
+ * 认 maskId 而不是下标 —— 删一个遮罩或者调顺序之后，下标会错位，
+ * 动画就会莫名其妙套到另一个遮罩上。
+ */
+function buildMaskParamDescriptor({
+	element,
+	maskId,
+	paramKey,
+}: {
+	element: TimelineElement;
+	maskId: string;
+	paramKey: string;
+}): AnimationPathDescriptor | null {
+	if (!isMaskableElement(element)) {
+		return null;
+	}
+
+	registerDefaultMasks();
+	const masks = element.masks ?? [];
+	const mask = masks.find((candidate) => candidate.id === maskId);
+	if (!mask || !masksRegistry.has(mask.type)) {
+		return null;
+	}
+
+	const definition = masksRegistry.get(mask.type);
+	const param = definition.params.find(
+		(candidate) => candidate.key === paramKey,
+	);
+	if (!param) {
+		return null;
+	}
+
+	return buildParamDescriptor({
+		param,
+		baseParams: mask.params as unknown as ParamValues,
+		setParams: (params) => ({
+			...element,
+			masks: masks.map((candidate) =>
+				candidate.id !== maskId
+					? candidate
+					: {
+							...candidate,
+							params: params as unknown as typeof candidate.params,
+						},
+			),
+		} as unknown as TimelineElement),
+	});
+}
+
 export function resolveAnimationTarget({
 	element,
 	path,
@@ -190,6 +242,15 @@ export function resolveAnimationTarget({
 	});
 	if (elementParamTarget) {
 		return elementParamTarget;
+	}
+
+	const maskParamTarget = parseMaskParamPath({ propertyPath: path });
+	if (maskParamTarget) {
+		return buildMaskParamDescriptor({
+			element,
+			maskId: maskParamTarget.maskId,
+			paramKey: maskParamTarget.paramKey,
+		});
 	}
 
 	const graphicParamTarget = parseGraphicParamPath({ propertyPath: path });
