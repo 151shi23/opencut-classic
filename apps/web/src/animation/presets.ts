@@ -30,6 +30,18 @@ export interface PresetContext {
 	volumeDb: number;
 	/** 用户指定的动画时长（秒）；不传则按元素时长自动收拢。 */
 	durationSeconds?: number;
+	/**
+	 * 元素当前的变换/不透明值。循环类预设要在"现在的样子"周围摆动，
+	 * 不能凭空假设缩放是 1、位置是 0 —— 那样一点呼吸就把用户摆好的构图冲掉了。
+	 */
+	base: {
+		positionX: number;
+		positionY: number;
+		scaleX: number;
+		scaleY: number;
+		rotate: number;
+		opacity: number;
+	};
 }
 
 const MAX_PRESET_SECONDS = 0.6;
@@ -160,8 +172,22 @@ export function mergePresetAnimations({
 		const kept = (existingKeys ?? []).filter(
 			(item) => Number(item.time) < from - 1 || Number(item.time) > to + 1,
 		);
+		/*
+		 * 外推设置必须跟着本次预设走：以前只把 keys 抄过去，loop 预设合并完
+		 * extrapolation 就没了，"呼吸"只呼吸一圈然后停住。
+		 */
+		const builtExtrapolation = (builtChannel as ScalarChannel).extrapolation;
+		const existingChannel = existingKeys
+			? (next[path] as ScalarChannel)
+			: undefined;
 		next[path] = {
-			...(existingKeys ? (next[path] as ScalarChannel) : undefined),
+			...existingChannel,
+			...(builtExtrapolation ?? existingChannel?.extrapolation
+				? {
+						extrapolation:
+							builtExtrapolation ?? existingChannel?.extrapolation,
+					}
+				: {}),
 			keys: [...kept, ...builtKeys].sort(
 				(a, b) => Number(a.time) - Number(b.time),
 			),
@@ -443,6 +469,137 @@ export const AUDIO_FADE_OUT: AnimationPreset = {
 };
 
 /**
+ * 循环预设：只写"一圈"的关键帧，靠通道的 loop / pingPong 外推把它撑满整条素材。
+ *
+ * 这是关键帧上限真正被拔高的地方 —— 一段 1.6 秒的呼吸挂上 loop 之后，
+ * 8 秒的片段不用补 16 组点，曲线编辑器里仍然只有那 3 个关键帧，
+ * 导出采样走的是同一个求值函数，预览和成片必然一致。
+ */
+
+function loopSeconds({
+	durationTicks,
+	durationSeconds,
+}: Pick<PresetContext, "durationTicks" | "durationSeconds">): number {
+	if (durationSeconds !== undefined) {
+		return presetSeconds({ durationTicks, durationSeconds });
+	}
+	const clipSeconds = durationTicks / TICKS_PER_SECOND;
+	return clamp(clipSeconds * 0.3, 0.8, 2.4);
+}
+
+function loopChannels({
+	paths,
+	keys,
+	extrapolation,
+}: {
+	paths: readonly string[];
+	keys: Record<string, ScalarAnimationKey[]>;
+	extrapolation: { before: "loop" | "pingPong"; after: "loop" | "pingPong" };
+}): ElementAnimations {
+	const next = buildChannels({ paths, keys });
+	for (const path of paths) {
+		const channel = next[path];
+		if (channel) {
+			next[path] = { ...(channel as ScalarChannel), extrapolation };
+		}
+	}
+	return next;
+}
+
+const LOOP = { before: "loop", after: "loop" } as const;
+const PING_PONG = { before: "pingPong", after: "pingPong" } as const;
+
+export const LOOP_PRESETS: AnimationPreset[] = [
+	{
+		id: "loop-breathe",
+		label: "呼吸",
+		paths: ["transform.scaleX", "transform.scaleY"],
+		build: (context) => {
+			const cycle = loopSeconds(context) * TICKS_PER_SECOND;
+			const sx = context.base.scaleX;
+			const sy = context.base.scaleY;
+			return loopChannels({
+				paths: ["transform.scaleX", "transform.scaleY"],
+				extrapolation: LOOP,
+				keys: {
+					"transform.scaleX": [
+						key({ timeTicks: 0, value: sx }),
+						key({ timeTicks: cycle / 2, value: sx * 1.06 }),
+						key({ timeTicks: cycle, value: sx }),
+					],
+					"transform.scaleY": [
+						key({ timeTicks: 0, value: sy }),
+						key({ timeTicks: cycle / 2, value: sy * 1.06 }),
+						key({ timeTicks: cycle, value: sy }),
+					],
+				},
+			});
+		},
+	},
+	{
+		id: "loop-sway",
+		label: "左右摆动",
+		paths: ["transform.positionX"],
+		build: (context) => {
+			const cycle = loopSeconds(context) * TICKS_PER_SECOND;
+			const at = context.base.positionX;
+			return loopChannels({
+				paths: ["transform.positionX"],
+				extrapolation: PING_PONG,
+				keys: {
+					"transform.positionX": [
+						key({ timeTicks: 0, value: at }),
+						key({ timeTicks: cycle / 2, value: at + 18 }),
+						key({ timeTicks: cycle, value: at }),
+					],
+				},
+			});
+		},
+	},
+	{
+		id: "loop-spin",
+		label: "转圈",
+		paths: ["transform.rotate"],
+		build: (context) => {
+			const cycle = loopSeconds(context) * TICKS_PER_SECOND;
+			const from = context.base.rotate;
+			return loopChannels({
+				paths: ["transform.rotate"],
+				extrapolation: LOOP,
+				keys: {
+					"transform.rotate": [
+						key({ timeTicks: 0, value: from }),
+						// 收到 359.9 而不是 360：loop 在整周期边界上取的是尾帧值，
+						// 首尾同值会让人觉得"卡了一帧没转完"
+						key({ timeTicks: cycle, value: from + 359.9 }),
+					],
+				},
+			});
+		},
+	},
+	{
+		id: "loop-blink",
+		label: "闪烁",
+		paths: ["opacity"],
+		build: (context) => {
+			const cycle = loopSeconds(context) * TICKS_PER_SECOND;
+			const full = context.base.opacity;
+			return loopChannels({
+				paths: ["opacity"],
+				extrapolation: LOOP,
+				keys: {
+					opacity: [
+						key({ timeTicks: 0, value: full }),
+						key({ timeTicks: cycle / 2, value: Math.max(full * 0.25, 0.02) }),
+						key({ timeTicks: cycle, value: full }),
+					],
+				},
+			});
+		},
+	},
+];
+
+/**
  * 清除预设。
  * 不传 window：整条属性动画删掉（"清除全部动画"、音频组用这个）。
  * 传 window：只删片段前半段（入场）或后半段（出场）的关键帧，另一组保留。
@@ -496,7 +653,7 @@ export function isPresetApplied({
 	animations: ElementAnimations | undefined;
 	window?: PresetWindow;
 	groupPaths: readonly string[];
-	context: { durationTicks: number; volumeDb: number };
+	context: PresetContext;
 }): boolean {
 	const built = preset.build(context);
 	const boundary = context.durationTicks / 2;

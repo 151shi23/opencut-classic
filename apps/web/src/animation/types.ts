@@ -64,10 +64,19 @@ export type DiscreteKeyframeInterpolation = "hold";
 export type AnimationInterpolation =
 	| ContinuousKeyframeInterpolation
 	| DiscreteKeyframeInterpolation;
+/**
+ * 通道首尾之外的取值。
+ * `loop` / `pingPong` 把"最后一个关键帧之后"变成把整段动画重复播 ——
+ * 一段 1 秒的呼吸就能撑满 8 秒，不用真的去补 16 个点。
+ */
+export type ChannelExtrapolationMode =
+	| "hold"
+	| "linear"
+	| "loop"
+	| "pingPong";
 
 export type ScalarSegmentType = "step" | "linear" | "bezier";
 export type TangentMode = "auto" | "aligned" | "broken" | "flat";
-export type ChannelExtrapolationMode = "hold" | "linear";
 
 export interface CurveHandle {
 	dt: MediaTime;

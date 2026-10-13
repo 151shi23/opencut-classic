@@ -15,12 +15,14 @@ import {
 	AUDIO_FADE_OUT,
 	ENTRANCE_PRESETS,
 	EXIT_PRESETS,
+	LOOP_PRESETS,
 	autoPresetSeconds,
 	clearPresetPaths,
 	maxPresetSeconds,
 	mergePresetAnimations,
 	PRESET_MIN_SECONDS,
 	type AnimationPreset,
+	type PresetContext,
 	type PresetWindow,
 } from "@/animation/presets";
 import type { TimelineElement } from "@/timeline";
@@ -35,8 +37,29 @@ export function AnimationPresetsSection({
 	const editor = useEditor();
 	const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
 	const hasAudio = element.type === "video" || element.type === "audio";
-	const volumeDb =
-		typeof element.params.volume === "number" ? element.params.volume : 0;
+	const numberParam = (key: string, fallback: number) =>
+		typeof element.params[key] === "number"
+			? (element.params[key] as number)
+			: fallback;
+	const volumeDb = numberParam("volume", 0);
+	/*
+	 * 循环类预设围着"元素现在的样子"转，不能凭空假设缩放 1、位置 0 ——
+	 * 那样用户摆好的构图会被一口呼吸冲掉。
+	 */
+	const base: PresetContext["base"] = {
+		positionX: numberParam("transform.positionX", 0),
+		positionY: numberParam("transform.positionY", 0),
+		scaleX: numberParam("transform.scaleX", 1),
+		scaleY: numberParam("transform.scaleY", 1),
+		rotate: numberParam("transform.rotate", 0),
+		opacity: numberParam("opacity", 1),
+	};
+	const presetContext = (seconds: number | null): PresetContext => ({
+		durationTicks: element.duration,
+		volumeDb,
+		base,
+		...(seconds !== null ? { durationSeconds: seconds } : {}),
+	});
 
 	const apply = (preset: AnimationPreset) => {
 		editor.timeline.previewElements({
@@ -47,11 +70,7 @@ export function AnimationPresetsSection({
 					updates: {
 						animations: mergePresetAnimations({
 							existing: element.animations,
-							built: preset.build({
-								durationTicks: element.duration,
-								volumeDb,
-								durationSeconds: durationSeconds ?? undefined,
-							}),
+							built: preset.build(presetContext(durationSeconds)),
 						}),
 					},
 				},
@@ -101,7 +120,7 @@ export function AnimationPresetsSection({
 					presets={ENTRANCE_PRESETS}
 					window="start"
 					animations={element.animations}
-					context={{ durationTicks: element.duration, volumeDb }}
+					context={presetContext(null)}
 					onApply={apply}
 					onClear={() =>
 						clear({
@@ -116,7 +135,7 @@ export function AnimationPresetsSection({
 					presets={EXIT_PRESETS}
 					window="end"
 					animations={element.animations}
-					context={{ durationTicks: element.duration, volumeDb }}
+					context={presetContext(null)}
 					onApply={apply}
 					onClear={() =>
 						clear({
@@ -125,13 +144,28 @@ export function AnimationPresetsSection({
 						})
 					}
 				/>
+				{/*
+					循环组不占"开头/结尾"某一段，它靠通道的 loop 外推把一圈动画
+					重复到素材结束，所以不传 window，清除时整条通道删掉。
+				*/}
+				<PresetGroup
+					title="循环"
+					caption="撑满整段"
+					presets={LOOP_PRESETS}
+					animations={element.animations}
+					context={presetContext(null)}
+					onApply={apply}
+					onClear={() =>
+						clear({ paths: LOOP_PRESETS.flatMap((p) => p.paths) })
+					}
+				/>
 				{hasAudio ? (
 					<PresetGroup
 						title="音频"
 						caption="音量斜坡"
 						presets={[AUDIO_FADE_IN, AUDIO_FADE_OUT]}
 						animations={element.animations}
-						context={{ durationTicks: element.duration, volumeDb }}
+						context={presetContext(null)}
 						onApply={apply}
 						onClear={() => clear({ paths: AUDIO_FADE_IN.paths })}
 					/>
@@ -145,6 +179,7 @@ export function AnimationPresetsSection({
 							paths: [
 								...ENTRANCE_PRESETS,
 								...EXIT_PRESETS,
+								...LOOP_PRESETS,
 								AUDIO_FADE_IN,
 							].flatMap((p) => p.paths),
 						})
@@ -229,7 +264,7 @@ function PresetGroup({
 	presets: readonly AnimationPreset[];
 	window?: PresetWindow;
 	animations: TimelineElement["animations"];
-	context: { durationTicks: number; volumeDb: number };
+	context: PresetContext;
 	onApply: (preset: AnimationPreset) => void;
 	onClear: () => void;
 }) {
@@ -449,6 +484,41 @@ function GlyphBody({ id }: { id: string }) {
 					/>
 					<path d="M2.8 4.6 13.2 12.4" />
 					<path d="M2.8 12.4h10.4" opacity="0.4" />
+				</>
+			);
+		case "loop-breathe":
+			return (
+				<>
+					<circle cx="8" cy="8" r="2.4" fill="currentColor" />
+					<circle
+						cx="8"
+						cy="8"
+						r="5.4"
+						strokeDasharray="2 2"
+						opacity="0.55"
+					/>
+				</>
+			);
+		case "loop-sway":
+			return (
+				<>
+					<path d="M3.2 8c1.6-2.6 8-2.6 9.6 0" />
+					<path d="M4.6 6.2 3 8l1.9 1.4" />
+					<path d="M11.4 9.8 13 8l-1.9-1.4" opacity="0.6" />
+				</>
+			);
+		case "loop-spin":
+			return (
+				<>
+					<path d="M13 8a5 5 0 1 1-1.7-3.75" />
+					<path d="M13.2 2.9v2.3h-2.3" />
+				</>
+			);
+		case "loop-blink":
+			return (
+				<>
+					<circle cx="5.4" cy="8" r="2.6" fill="currentColor" />
+					<circle cx="11.2" cy="8" r="2.6" fill="currentColor" opacity="0.2" />
 				</>
 			);
 		default:

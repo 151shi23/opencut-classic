@@ -17,6 +17,7 @@ import {
 	solveBezierProgressForTime,
 } from "./bezier";
 import { clamp } from "@/utils/math";
+import { edgeExtrapolationMode, foldPeriodicTime } from "./extrapolation";
 
 function byTimeAscending({
 	leftTime,
@@ -240,7 +241,7 @@ export function getScalarSegmentInterpolation({
 
 export function getScalarChannelValueAtTime({
 	channel,
-	time,
+	time: rawTime,
 	fallbackValue,
 }: {
 	channel: Channel<number> | undefined;
@@ -258,10 +259,15 @@ export function getScalarChannelValueAtTime({
 		return fallbackValue;
 	}
 
+	// 循环 / 乒乓：先把窗口外的时间折回区间内，之后所有分支都按折后的时间走
+	const time = foldPeriodicTime({ channel: normalizedChannel, time: rawTime });
+
 	if (time <= firstKey.time) {
 		if (time < firstKey.time) {
 			return extrapolateScalarEdge({
-				mode: normalizedChannel.extrapolation?.before ?? "hold",
+				mode: edgeExtrapolationMode({
+					mode: normalizedChannel.extrapolation?.before ?? "hold",
+				}),
 				edgeKey: firstKey,
 				neighborKey: normalizedChannel.keys[1],
 				time,
@@ -274,7 +280,9 @@ export function getScalarChannelValueAtTime({
 	if (time >= lastKey.time) {
 		if (time > lastKey.time) {
 			return extrapolateScalarEdge({
-				mode: normalizedChannel.extrapolation?.after ?? "hold",
+				mode: edgeExtrapolationMode({
+					mode: normalizedChannel.extrapolation?.after ?? "hold",
+				}),
 				edgeKey: lastKey,
 				neighborKey: normalizedChannel.keys[normalizedChannel.keys.length - 2],
 				time,

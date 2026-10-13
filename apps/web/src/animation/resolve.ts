@@ -111,12 +111,15 @@ export function resolveAnimationPathValueAtTime({
 		return fallbackValue;
 	}
 
+	/*
+	 * 以前要求 r/g/b/a 四个分量通道**都在**才认这条颜色动画：少任何一个就直接
+	 * 退回 fallback 色 —— 而 setChannelInData 会把"当前没有关键帧"的分量删掉，
+	 * 于是切一刀 / 缩短时长把 alpha 分量削空之后，整条颜色动画会静默失效。
+	 * 只要有一个分量在就照常解析，缺的那个走下面各自的 fallback。
+	 */
 	if (
 		typeof fallbackValue !== "string" ||
-		!("r" in data) ||
-		!("g" in data) ||
-		!("b" in data) ||
-		!("a" in data)
+		(!("r" in data) && !("g" in data) && !("b" in data) && !("a" in data))
 	) {
 		return fallbackValue;
 	}
